@@ -12,6 +12,7 @@ import {
   orderBy, limit, getDoc, doc,
 } from 'firebase/firestore';
 import { getTodayManila, formatDate, isOverdue } from '../lib/helpers';
+import { StatusBadge } from '../components/StatusBadge';
 import { CardSkeleton } from '../components/LoadingSpinner';
 import labPics2 from '../assets/lab-pics2.png';
 
