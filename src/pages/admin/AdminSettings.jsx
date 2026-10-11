@@ -368,30 +368,175 @@ export default function AdminSettings() {
             />
           )}
           {tab === 3 && (
-            <div className="space-y-3">
-              <p className="text-sm text-gray-600">Manage penalty rule cards shown on the Rules & Penalties page.</p>
-              {(settings.penaltyRules || []).map((rule, i) => (
-                <div key={rule.id || i} className="p-4 border border-gray-200 rounded-xl space-y-2">
-                  <input className="input text-sm font-semibold" value={rule.title}
-                    onChange={e => {
-                      const r = [...settings.penaltyRules]; r[i] = { ...r[i], title: e.target.value };
-                      setSettings(s => ({ ...s, penaltyRules: r }));
-                    }} />
-                  <textarea className="input text-sm min-h-[50px] resize-none" value={rule.description}
-                    onChange={e => {
-                      const r = [...settings.penaltyRules]; r[i] = { ...r[i], description: e.target.value };
-                      setSettings(s => ({ ...s, penaltyRules: r }));
-                    }} />
-                  <input className="input text-sm" placeholder="Consequence" value={rule.consequence}
-                    onChange={e => {
-                      const r = [...settings.penaltyRules]; r[i] = { ...r[i], consequence: e.target.value };
-                      setSettings(s => ({ ...s, penaltyRules: r }));
-                    }} />
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-gray-100">
+                <div>
+                  <h3 className="text-base font-bold text-ink">Laboratory Penalty Rules</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Customize the penalty rules and violation guidelines visible to all students on the Rules & Penalties page.
+                  </p>
                 </div>
-              ))}
-              <button onClick={() => savePenaltyRules(settings.penaltyRules)} className="btn-primary btn-sm">
-                <Save size={14} /> Save Rules
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newRule = {
+                      id: `rule_${Date.now()}`,
+                      title: '',
+                      description: '',
+                      consequence: '',
+                      icon: 'AlertTriangle',
+                      iconColor: 'text-crimson',
+                      bg: 'bg-gold-pale/50',
+                      border: 'border-gold/30',
+                    };
+                    setSettings(s => ({ ...s, penaltyRules: [...(s.penaltyRules || []), newRule] }));
+                  }}
+                  className="btn-primary btn-sm shrink-0 self-start sm:self-auto"
+                >
+                  <Plus size={15} /> Add New Rule
+                </button>
+              </div>
+
+              {(!settings.penaltyRules || settings.penaltyRules.length === 0) ? (
+                <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                  <BookOpen size={28} className="mx-auto text-gray-400 mb-2" />
+                  <p className="text-sm font-medium text-gray-600">No penalty rules configured.</p>
+                  <p className="text-xs text-gray-400 mt-1">Click "Add New Rule" above to create one.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {(settings.penaltyRules || []).map((rule, i) => (
+                    <div
+                      key={rule.id || i}
+                      className="p-4 sm:p-5 border border-gold/25 rounded-2xl bg-white shadow-sm hover:shadow-md transition-shadow relative space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-gold px-2.5 py-0.5 rounded-full bg-crimson-dark/10 border border-gold/30">
+                          Rule #{i + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = settings.penaltyRules.filter((_, idx) => idx !== i);
+                            setSettings(s => ({ ...s, penaltyRules: updated }));
+                          }}
+                          className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                          title="Delete Rule"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="label text-xs font-semibold text-gray-700">Violation Title</label>
+                          <input
+                            className="input text-sm font-semibold"
+                            placeholder="e.g. Broken Glassware, Late Return..."
+                            value={rule.title || ''}
+                            onChange={e => {
+                              const r = [...settings.penaltyRules];
+                              r[i] = { ...r[i], title: e.target.value };
+                              setSettings(s => ({ ...s, penaltyRules: r }));
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="label text-xs font-semibold text-gray-700">Consequence / Penalty</label>
+                          <input
+                            className="input text-sm"
+                            placeholder="e.g. Warning, 1-week restriction, replacement responsibility..."
+                            value={rule.consequence || ''}
+                            onChange={e => {
+                              const r = [...settings.penaltyRules];
+                              r[i] = { ...r[i], consequence: e.target.value };
+                              setSettings(s => ({ ...s, penaltyRules: r }));
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="label text-xs font-semibold text-gray-700">Description & Details</label>
+                        <textarea
+                          className="input text-sm min-h-[60px] resize-y"
+                          placeholder="Explain what qualifies as a violation of this rule..."
+                          value={rule.description || ''}
+                          onChange={e => {
+                            const r = [...settings.penaltyRules];
+                            r[i] = { ...r[i], description: e.target.value };
+                            setSettings(s => ({ ...s, penaltyRules: r }));
+                          }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="label text-xs text-gray-600">Card Icon</label>
+                          <select
+                            className="input text-xs"
+                            value={rule.icon || 'AlertTriangle'}
+                            onChange={e => {
+                              const r = [...settings.penaltyRules];
+                              r[i] = { ...r[i], icon: e.target.value };
+                              setSettings(s => ({ ...s, penaltyRules: r }));
+                            }}
+                          >
+                            <option value="AlertTriangle">Alert Triangle (Warning)</option>
+                            <option value="Package">Package (Inventory / Handling)</option>
+                            <option value="Tool">Wrench / Tool (Damage / Repair)</option>
+                            <option value="AlertCircle">Alert Circle (Critical / Loss)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="label text-xs text-gray-600">Color Badge Style</label>
+                          <select
+                            className="input text-xs"
+                            value={rule.colorPreset || (rule.bg === 'bg-amber-50' ? 'amber' : rule.bg === 'bg-orange-50' ? 'orange' : rule.bg === 'bg-red-50' ? 'red' : 'gold')}
+                            onChange={e => {
+                              const presets = {
+                                gold: { bg: 'bg-gold-pale/50', border: 'border-gold/30', iconColor: 'text-crimson' },
+                                amber: { bg: 'bg-amber-50', border: 'border-amber-200', iconColor: 'text-amber-500' },
+                                orange: { bg: 'bg-orange-50', border: 'border-orange-200', iconColor: 'text-orange-500' },
+                                red: { bg: 'bg-red-50', border: 'border-red-200', iconColor: 'text-red-500' },
+                              };
+                              const selected = presets[e.target.value] || presets.gold;
+                              const r = [...settings.penaltyRules];
+                              r[i] = { ...r[i], colorPreset: e.target.value, ...selected };
+                              setSettings(s => ({ ...s, penaltyRules: r }));
+                            }}
+                          >
+                            <option value="gold">Gold / Crimson (Theme Default)</option>
+                            <option value="amber">Amber (Moderate Warning)</option>
+                            <option value="orange">Orange (Damage Assessment)</option>
+                            <option value="red">Red (Severe / Replacement)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => savePenaltyRules(settings.penaltyRules)}
+                  className="btn-primary"
+                >
+                  <Save size={15} /> Save All Penalty Rules
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettings(s => ({ ...s, penaltyRules: DEFAULT_PENALTY_RULES }));
+                    toast.info('Reset to default rules in editor. Click Save to persist.');
+                  }}
+                  className="btn-ghost btn-sm text-gray-500 hover:text-crimson"
+                >
+                  Restore Defaults
+                </button>
+              </div>
             </div>
           )}
           {tab === 4 && (
