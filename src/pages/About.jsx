@@ -10,12 +10,12 @@ export default function About() {
             <FlaskConical size={32} strokeWidth={1.5} />
           </div>
           <h1 className="text-2xl font-bold">LabTrack</h1>
-          <p className="text-blue-100 text-sm mt-1">KNCHS Science Laboratory Equipment Inventory & Borrowing System</p>
+          <p className="text-blue-100 text-sm mt-1">KNCHS SHS Laboratory System</p>
           <p className="text-blue-200 italic text-sm mt-3">Science today, solutions tomorrow.</p>
         </div>
         <div className="p-6 space-y-4">
           <p className="text-sm text-gray-600">
-            LabTrack is the official laboratory equipment management system for Kapatagan National Comprehensive High School (KNCHS).
+            LabTrack is the official laboratory equipment management system for Koronadal National Comprehensive High School (KNCHS).
             It streamlines the process of tracking, borrowing, and returning science laboratory equipment.
           </p>
 

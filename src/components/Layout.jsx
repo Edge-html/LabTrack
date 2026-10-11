@@ -171,7 +171,7 @@ export function Header({ onMenuClick, notifCount }) {
 
       {/* Desktop subtitle */}
       <div className="hidden lg:block text-blue-200 text-xs">
-        KNCHS Science Laboratory Equipment Inventory & Borrowing System
+        KNCHS SHS Laboratory System
       </div>
 
       <div className="ml-auto flex items-center gap-3">

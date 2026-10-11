@@ -1,4 +1,4 @@
-# LabTrack — KNCHS Science Laboratory Equipment Inventory & Borrowing System
+# LabTrack — KNCHS SHS Laboratory System
 
 > Track, borrow, and return laboratory equipment — all in one place.
 
