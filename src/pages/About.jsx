@@ -11,17 +11,18 @@ export default function About() {
         <div
           className="relative text-white p-8 sm:p-10 text-center overflow-hidden"
           style={{
-            background: `radial-gradient(ellipse at center, rgba(156, 18, 24, 0.94) 0%, rgba(156, 18, 24, 0.78) 45%, rgba(156, 18, 24, 0.25) 80%, transparent 100%), url(${labPics2}) center / cover no-repeat`,
-            backgroundColor: '#6E0B10',
+            background: `linear-gradient(to bottom, rgba(110, 11, 16, 0.8), rgba(0, 0, 0, 0.7)), url(${labPics2}) center / cover no-repeat`,
+            backgroundColor: '#1a1a1a',
           }}
         >
-          <div className="relative z-10">
-            {/* Logo in semi-transparent rounded square with gold border */}
-            <div className="inline-flex items-center justify-center w-20 h-20 bg-black/35 backdrop-blur-xs rounded-2xl mb-4 border-2 border-gold shadow-lg p-2.5">
+          <div className="relative z-10 flex flex-col items-center">
+            {/* Logo in crisp circular badge */}
+            <div className="relative mb-4">
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[2px] opacity-60"></div>
               <img
                 src={knchsLogo}
                 alt="KNCHS School Seal"
-                className="w-full h-full object-contain"
+                className="relative w-20 h-20 rounded-full object-contain bg-white p-1 shadow-lg ring-2 ring-gold/80"
                 loading="lazy"
               />
             </div>

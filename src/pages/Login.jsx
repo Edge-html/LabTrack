@@ -60,11 +60,12 @@ export default function Login() {
       <div className="w-full max-w-md">
         {/* Logo and title header */}
         <div className="flex items-center gap-3.5 mb-6">
-          <div className="w-14 h-14 bg-white/10 backdrop-blur-xs rounded-2xl p-1.5 border border-gold/40 flex items-center justify-center shrink-0 shadow-md">
+          <div className="relative shrink-0">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[1px] opacity-60"></div>
             <img
               src={knchsLogo}
               alt="KNCHS School Seal"
-              className="w-full h-full object-contain"
+              className="relative w-14 h-14 rounded-full object-contain bg-white p-0.5 shadow-md ring-2 ring-gold/70"
               loading="lazy"
             />
           </div>

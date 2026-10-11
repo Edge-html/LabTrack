@@ -88,31 +88,26 @@ export default function Home() {
         });
 
         // Requests
-        let reqQ, pendingQ;
+        let recentSnap, pendingSnapSize = 0;
+        let recentDocs = [];
+        
         if (isAdmin) {
-          reqQ = query(collection(db, 'requests'), orderBy('requestDate', 'desc'), limit(8));
-          pendingQ = query(collection(db, 'requests'), where('status', '==', 'pending'));
+          const reqQ = query(collection(db, 'requests'), orderBy('requestDate', 'desc'), limit(8));
+          const pendingQ = query(collection(db, 'requests'), where('status', '==', 'pending'));
+          const [rSnap, pSnap] = await Promise.all([getDocs(reqQ), getDocs(pendingQ)]);
+          recentDocs = rSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          pendingSnapSize = pSnap.size;
         } else {
-          reqQ = query(
-            collection(db, 'requests'),
-            where('userId', '==', userProfile.uid),
-            orderBy('requestDate', 'desc'),
-            limit(8)
-          );
-          pendingQ = query(
-            collection(db, 'requests'),
-            where('userId', '==', userProfile.uid),
-            where('status', '==', 'pending')
-          );
+          // For students, fetch all their requests and filter/sort in memory to avoid missing index errors
+          const studentQ = query(collection(db, 'requests'), where('userId', '==', userProfile.uid));
+          const snap = await getDocs(studentQ);
+          const allReqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          
+          pendingSnapSize = allReqs.filter(r => r.status === 'pending').length;
+          recentDocs = [...allReqs].sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate)).slice(0, 8);
         }
 
-        const [recentSnap, pendingSnap] = await Promise.all([
-          getDocs(reqQ),
-          getDocs(pendingQ),
-        ]);
-
-        const requests = recentSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setRecentRequests(requests);
+        setRecentRequests(recentDocs);
 
         // Overdue and borrowed counts
         let borrowedCount = 0, overdueCount = 0;
@@ -128,11 +123,17 @@ export default function Home() {
         }
 
         // Today's schedule
-        const schedQ = isAdmin
-          ? query(collection(db, 'requests'), where('experimentDate', '==', today), where('status', 'in', ['approved', 'borrowed']))
-          : query(collection(db, 'requests'), where('userId', '==', userProfile.uid), where('experimentDate', '==', today), where('status', 'in', ['approved', 'borrowed']));
-        const schedSnap = await getDocs(schedQ);
-        setTodaySchedule(schedSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        let schedDocs = [];
+        if (isAdmin) {
+          const schedQ = query(collection(db, 'requests'), where('experimentDate', '==', today), where('status', 'in', ['approved', 'borrowed']));
+          const schedSnap = await getDocs(schedQ);
+          schedDocs = schedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } else {
+          const schedQ = query(collection(db, 'requests'), where('userId', '==', userProfile.uid));
+          const snap = await getDocs(schedQ);
+          schedDocs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.experimentDate === today && ['approved', 'borrowed'].includes(r.status));
+        }
+        setTodaySchedule(schedDocs);
 
         // Contact
         const contactSnap = await getDoc(doc(db, 'settings', 'contact'));
@@ -142,24 +143,31 @@ export default function Home() {
           totalQty,
           availableQty,
           borrowed: borrowedCount,
-          pending: pendingSnap.size,
+          pending: pendingSnapSize,
           overdue: overdueCount,
         });
       } catch (err) {
-        console.error(err);
+        console.error("Error loading dashboard data:", err);
       } finally {
         setLoading(false);
       }
     }
 
     // Use onSnapshot for live dashboard counts
-    const reqQ = isAdmin
-      ? query(collection(db, 'requests'), orderBy('requestDate', 'desc'), limit(8))
-      : query(collection(db, 'requests'), where('userId', '==', userProfile.uid), orderBy('requestDate', 'desc'), limit(8));
-
-    const unsub = onSnapshot(reqQ, (snap) => {
-      setRecentRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, () => {});
+    let unsub = () => {};
+    if (isAdmin) {
+      const reqQ = query(collection(db, 'requests'), orderBy('requestDate', 'desc'), limit(8));
+      unsub = onSnapshot(reqQ, (snap) => {
+        setRecentRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }, (err) => console.error("Admin onSnapshot error:", err));
+    } else {
+      const reqQ = query(collection(db, 'requests'), where('userId', '==', userProfile.uid));
+      unsub = onSnapshot(reqQ, (snap) => {
+        const allReqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const recent = allReqs.sort((a, b) => new Date(b.requestDate) - new Date(a.requestDate)).slice(0, 8);
+        setRecentRequests(recent);
+      }, (err) => console.error("Student onSnapshot error:", err));
+    }
 
     loadData();
     return unsub;
