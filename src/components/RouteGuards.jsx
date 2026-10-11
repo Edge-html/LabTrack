@@ -5,6 +5,7 @@ import { Sidebar, Header } from './Layout';
 import { PageLoader } from './LoadingSpinner';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import knchsLogo from '../assets/knchs-logo.png';
 
 export function RequireAuth() {
   const { currentUser, loading } = useAuth();
@@ -47,9 +48,21 @@ function AppShell() {
   }, [userProfile, isAdmin]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="relative flex h-screen overflow-hidden bg-cream">
+      {/* Background Watermark for all application pages */}
+      <div
+        className="fixed inset-0 pointer-events-none flex items-center justify-center lg:pl-56 z-0 overflow-hidden"
+        aria-hidden="true"
+      >
+        <img
+          src={knchsLogo}
+          alt=""
+          className="w-[380px] sm:w-[500px] md:w-[620px] max-w-[85vw] object-contain opacity-[0.06] select-none pointer-events-none"
+        />
+      </div>
+
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10">
         <Header onMenuClick={() => setMobileOpen(true)} notifCount={notifCount} />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />

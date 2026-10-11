@@ -63,7 +63,15 @@ export function Sidebar({ mobileOpen, onClose }) {
   }
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-crimson-dark text-white border-r border-gold/20">
+    <div className="relative flex flex-col h-full bg-crimson-dark text-white border-r border-gold/20 overflow-hidden">
+      {/* Subtle watermark in sidebar background */}
+      <div 
+        className="absolute -right-14 top-1/2 -translate-y-1/2 pointer-events-none opacity-[0.06] select-none z-0"
+        aria-hidden="true"
+      >
+        <img src={knchsLogo} alt="" className="w-64 h-64 object-contain filter brightness-125" />
+      </div>
+
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 bg-black/10">
         <div className="relative group shrink-0">
