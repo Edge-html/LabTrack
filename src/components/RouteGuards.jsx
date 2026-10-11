@@ -48,24 +48,20 @@ function AppShell() {
   }, [userProfile, isAdmin]);
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-cream">
-      {/* Full-page fitted background image using lab-pics4 */}
-      <div
-        className="fixed inset-0 pointer-events-none lg:left-56 z-0 overflow-hidden"
-        aria-hidden="true"
-      >
-        <img
-          src={labPics4}
-          alt=""
-          className="w-full h-full object-cover opacity-[0.09] select-none pointer-events-none filter saturate-50"
-        />
-        <div className="absolute inset-0 bg-cream/70" />
-      </div>
-
+    <div className="relative flex h-screen overflow-hidden">
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10">
         <Header onMenuClick={() => setMobileOpen(true)} notifCount={notifCount} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+        <main
+          className="flex-1 overflow-y-auto p-4 md:p-6"
+          style={{
+            backgroundImage: `linear-gradient(rgba(252, 251, 247, 0.85), rgba(252, 251, 247, 0.85)), url('/images/lab-pics4.jpg')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+            backgroundAttachment: 'local'
+          }}
+        >
           <Outlet />
         </main>
       </div>

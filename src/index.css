@@ -11,6 +11,11 @@
   }
   body {
     @apply font-sans bg-cream text-ink antialiased;
+    background-image: linear-gradient(rgba(252, 251, 247, 0.88), rgba(252, 251, 247, 0.88)), url('/images/lab-pics4.jpg');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-repeat: no-repeat;
   }
   a {
     @apply text-crimson hover:text-gold transition-colors;
