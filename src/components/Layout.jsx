@@ -73,20 +73,20 @@ export function Sidebar({ mobileOpen, onClose }) {
       </div>
 
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 bg-black/10">
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-gold/20 bg-black/10 shrink-0">
         <div className="relative group shrink-0">
-          <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[2px] opacity-60"></div>
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[1px] opacity-60"></div>
           <img 
             src={knchsLogo} 
             alt="KNCHS Seal" 
-            className="relative w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow-md ring-2 ring-gold/60" 
+            className="relative w-9 h-9 rounded-full object-contain bg-white p-0.5 shadow-sm ring-2 ring-gold/60" 
           />
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-xl text-white tracking-tight">Lab<span className="text-gold">Track</span></span>
+          <div className="flex items-center gap-1">
+            <span className="font-bold text-lg text-white tracking-tight leading-none">Lab<span className="text-gold">Track</span></span>
           </div>
-          <div className="text-[10px] font-bold text-cream/90 tracking-wider uppercase truncate mt-0.5">
+          <div className="text-[10px] font-bold text-cream/90 tracking-wider uppercase truncate leading-tight mt-0.5">
             KNCHS SHS Lab System
           </div>
         </div>
@@ -172,7 +172,7 @@ export function Header({ onMenuClick, notifCount }) {
   }
 
   return (
-    <header className="bg-crimson-dark text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-30 shadow-md border-b border-gold/20">
+    <header className="bg-crimson-dark text-white px-4 md:px-6 h-16 flex items-center gap-4 sticky top-0 z-30 shadow-sm border-b border-gold/20">
       <button
         onClick={onMenuClick}
         className="lg:hidden text-cream hover:text-white p-1"
