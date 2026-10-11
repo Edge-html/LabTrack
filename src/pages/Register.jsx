@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { FlaskConical, User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { GRADE_LEVELS } from '../lib/helpers';
+import { GRADE_LEVELS, isValidGradeLevel } from '../lib/helpers';
+import knchsLogo from '../assets/knchs-logo.png';
+import labPics1 from '../assets/lab-pics1.png';
 
 export default function Register() {
   const { register, parseFirebaseError } = useAuth();
@@ -21,7 +23,9 @@ export default function Register() {
     const errs = {};
     if (!form.name.trim()) errs.name = 'Full name is required.';
     if (!form.email) errs.email = 'Email is required.';
-    if (!form.gradeLevel) errs.gradeLevel = 'Grade level is required.';
+    if (!form.gradeLevel || !isValidGradeLevel(form.gradeLevel)) {
+      errs.gradeLevel = 'Please select Grade 11 or Grade 12.';
+    }
     if (!form.section.trim()) errs.section = 'Section is required.';
     if (form.password.length < 6) errs.password = 'Password must be at least 6 characters.';
     if (form.password !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match.';
@@ -58,18 +62,29 @@ export default function Register() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-800 to-navy flex items-center justify-center p-4">
+    <div
+      className="min-h-screen auth-bg-split flex items-center justify-center md:justify-start p-4 sm:p-6 md:pl-14 lg:pl-24 xl:pl-32 py-10"
+      style={{ '--auth-bg': `url(${labPics1})` }}
+    >
       <div className="w-full max-w-lg">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl mb-4">
-            <FlaskConical size={32} className="text-white" strokeWidth={1.5} />
+        {/* Logo and title header */}
+        <div className="flex items-center gap-3.5 mb-6">
+          <div className="w-14 h-14 bg-white/10 backdrop-blur-xs rounded-2xl p-1.5 border border-gold/40 flex items-center justify-center shrink-0 shadow-md">
+            <img
+              src={knchsLogo}
+              alt="KNCHS School Seal"
+              className="w-full h-full object-contain"
+              loading="lazy"
+            />
           </div>
-          <h1 className="text-3xl font-bold text-white">LabTrack</h1>
-          <p className="text-blue-200 text-sm mt-1">KNCHS Science Laboratory System</p>
+          <div>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none">LabTrack</h1>
+            <p className="text-gold text-xs sm:text-sm font-semibold mt-1">KNCHS SHS Laboratory System</p>
+          </div>
         </div>
 
-        <div className="card p-8">
-          <h2 className="text-xl font-semibold text-gray-800 mb-6">Create your account</h2>
+        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 border border-gold/20">
+          <h2 className="text-xl font-bold text-ink mb-6">Create your account</h2>
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>
           )}
@@ -183,7 +198,9 @@ export default function Register() {
           </form>
           <div className="mt-4 text-center text-sm text-gray-600">
             Already have an account?{' '}
-            <Link to="/login" className="text-primary-500 font-medium hover:underline">Sign in</Link>
+            <Link to="/login" className="text-crimson hover:text-gold transition-colors font-semibold hover:underline">
+              Sign in
+            </Link>
           </div>
         </div>
       </div>

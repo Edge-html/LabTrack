@@ -218,7 +218,7 @@ export default function PenaltiesViolations() {
         <div className="card-header">
           <AlertTriangle size={18} strokeWidth={1.8} />
           Penalties & Violations
-          <button onClick={() => setShowForm(v => !v)} className="ml-auto btn bg-white text-primary-700 btn-sm hover:bg-blue-50">
+          <button onClick={() => setShowForm(v => !v)} className="ml-auto btn-secondary btn-sm">
             <Plus size={14} /> Record Violation
           </button>
         </div>

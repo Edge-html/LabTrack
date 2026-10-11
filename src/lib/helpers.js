@@ -114,12 +114,18 @@ export function parseFirebaseError(error) {
 }
 
 /**
- * Grade levels for dropdowns.
+ * Only Grade 11 and Grade 12 students use the laboratory.
  */
-export const GRADE_LEVELS = [
-  'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10',
-  'Grade 11', 'Grade 12',
-];
+export const GRADE_LEVELS = ['Grade 11', 'Grade 12'];
+
+/**
+ * Validate that a grade level is 11 or 12.
+ */
+export function isValidGradeLevel(grade) {
+  if (!grade) return false;
+  const str = String(grade).trim();
+  return str === 'Grade 11' || str === 'Grade 12' || str === '11' || str === '12';
+}
 
 export const DURATION_OPTIONS = ['1 day', '2 days', '3 days', '1 week', 'Custom'];
 

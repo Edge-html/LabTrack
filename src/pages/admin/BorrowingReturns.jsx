@@ -304,7 +304,7 @@ export default function BorrowingReturns() {
         <div className="card-header">
           <Archive size={18} strokeWidth={1.8} />
           Borrowing & Returns
-          <span className="ml-auto text-xs text-blue-200">
+          <span className="ml-auto text-xs text-gold font-medium">
             {tab === 0 ? 'Approved & Borrowed requests' : 'Returned requests'}
           </span>
         </div>

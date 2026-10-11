@@ -7,22 +7,51 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: {
-          50: '#EAF2FB',
-          100: '#d0e6f7',
-          200: '#a3cdef',
-          300: '#75b3e7',
-          400: '#4899de',
-          500: '#1565C0',
-          600: '#1254a0',
-          700: '#0e4380',
-          800: '#0D3B7A',
-          900: '#092d61',
+        // KNCHS Red and Gold color tokens
+        crimson: {
+          DEFAULT: '#9C1218',
+          dark: '#6E0B10',
+          deep: '#55080C',
+          light: '#C62828',
+          hover: '#831015',
         },
+        gold: {
+          DEFAULT: '#E8B923',
+          light: '#FBE9A0',
+          pale: '#FFF6D6',
+          dark: '#B88E14',
+        },
+        cream: {
+          DEFAULT: '#FFF8E7',
+          light: '#FFFDF9',
+          dark: '#F7EED3',
+        },
+        flame: '#E8541E',
+        laurel: {
+          DEFAULT: '#3F7D20',
+          light: '#539E2E',
+          dark: '#2E5C17',
+          soft: '#EDF6E8',
+        },
+        ink: '#2B1B1B',
+        // System primary palette mapped to crimson & gold
+        primary: {
+          50: '#FFF8E7',   // warm cream
+          100: '#FFF6D6',  // pale gold
+          200: '#FBE9A0',  // light gold
+          300: '#E8B923',  // gold
+          400: '#C62828',  // light crimson
+          500: '#9C1218',  // crimson red
+          600: '#831015',  // crimson hover
+          700: '#6E0B10',  // dark crimson
+          800: '#55080C',  // deep crimson
+          900: '#3D0508',  // very dark crimson
+        },
+        // Deep crimson for sidebar and navbar
         navy: {
-          DEFAULT: '#0D3B7A',
-          dark: '#092d61',
-          light: '#1254a0',
+          DEFAULT: '#6E0B10',
+          dark: '#55080C',
+          light: '#9C1218',
         }
       },
       fontFamily: {

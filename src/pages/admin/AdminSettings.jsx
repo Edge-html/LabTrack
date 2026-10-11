@@ -9,7 +9,7 @@ import {
   doc, getDoc, setDoc, getDocs, collection, query,
   orderBy, updateDoc, serverTimestamp, writeBatch, addDoc,
 } from 'firebase/firestore';
-import { formatDate } from '../../lib/helpers';
+import { formatDate, GRADE_LEVELS } from '../../lib/helpers';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 
@@ -28,7 +28,7 @@ const DEFAULT_CATEGORIES = ['Glassware', 'Microscope', 'Heating Equipment', 'Mea
 const DEFAULT_CONDITIONS = ['Good', 'Needs Cleaning', 'Needs Repair', 'Damaged', 'Out of Service'];
 const DEFAULT_PENALTY_RULES = [
   { id: 'late', title: 'Late Return', icon: 'AlertTriangle', iconColor: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200', description: 'Returning equipment after the expected return date.', consequence: 'Corresponding penalty or warning as set by the school/laboratory.' },
-  { id: 'improper', title: 'Not Properly Returned/Arranged', icon: 'Package', iconColor: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', description: 'Equipment returned dirty or not arranged properly.', consequence: 'Warning or temporary borrowing restriction.' },
+  { id: 'improper', title: 'Not Properly Returned/Arranged', icon: 'Package', iconColor: 'text-crimson', bg: 'bg-gold-pale/50', border: 'border-gold/30', description: 'Equipment returned dirty or not arranged properly.', consequence: 'Warning or temporary borrowing restriction.' },
   { id: 'damaged', title: 'Damaged Equipment', icon: 'Tool', iconColor: 'text-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', description: 'Equipment returned in a damaged condition.', consequence: 'Assessment and possible replacement/repair responsibility.' },
   { id: 'lost', title: 'Lost Equipment', icon: 'AlertCircle', iconColor: 'text-red-500', bg: 'bg-red-50', border: 'border-red-200', description: 'Equipment not returned or confirmed lost.', consequence: 'Replacement or other school-approved consequence.' },
 ];
@@ -143,6 +143,7 @@ function UsersTab() {
     try {
       await updateDoc(doc(db, 'users', editUser.id), {
         role: editUser.role,
+        gradeLevel: editUser.gradeLevel || null,
         borrowRestrictedUntil: editUser.borrowRestrictedUntil || null,
         restrictionReason: editUser.restrictionReason || null,
         updatedAt: serverTimestamp(),
@@ -173,16 +174,16 @@ function UsersTab() {
             <tbody>
               {filtered.map(u => (
                 <tr key={u.id}>
-                  <td className="font-medium">{u.name}</td>
+                  <td className="font-medium text-ink">{u.name}</td>
                   <td className="text-sm">{u.email}</td>
-                  <td>{u.gradeLevel}</td>
+                  <td>{u.gradeLevel || '—'}</td>
                   <td>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-primary-100 text-primary-700' : 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-gold-pale text-crimson font-bold border border-gold/40' : 'bg-gray-100 text-gray-600'}`}>
                       {u.role}
                     </span>
                   </td>
                   <td className="text-sm">{u.borrowRestrictedUntil ? (
-                    <span className="text-red-600 font-medium">{formatDate(u.borrowRestrictedUntil)}</span>
+                    <span className="text-crimson font-semibold">{formatDate(u.borrowRestrictedUntil)}</span>
                   ) : '—'}</td>
                   <td>
                     <button onClick={() => setEditUser({ ...u })} className="btn-secondary btn-sm">
@@ -198,8 +199,8 @@ function UsersTab() {
       {editUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setEditUser(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fade-in">
-            <h3 className="font-semibold text-gray-900 mb-4">Edit User — {editUser.name}</h3>
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-fade-in border border-gold/30">
+            <h3 className="font-bold text-ink mb-4 text-base">Edit User — {editUser.name}</h3>
             <div className="space-y-3">
               <div>
                 <label className="label">Role</label>
@@ -207,6 +208,23 @@ function UsersTab() {
                   onChange={e => setEditUser(u => ({ ...u, role: e.target.value }))}>
                   <option value="student">student</option>
                   <option value="admin">admin</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Grade Level</label>
+                <select
+                  className="input"
+                  value={editUser.gradeLevel || ''}
+                  onChange={e => setEditUser(u => ({ ...u, gradeLevel: e.target.value }))}
+                >
+                  <option value="">Select grade level</option>
+                  {GRADE_LEVELS.map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                  {/* Preserve legacy value if present without offering other legacy options */}
+                  {editUser.gradeLevel && !GRADE_LEVELS.includes(editUser.gradeLevel) && (
+                    <option value={editUser.gradeLevel}>{editUser.gradeLevel} (Legacy)</option>
+                  )}
                 </select>
               </div>
               <div>

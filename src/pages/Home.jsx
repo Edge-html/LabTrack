@@ -14,14 +14,15 @@ import {
 import { getTodayManila, formatDate, isOverdue } from '../lib/helpers';
 import { StatusBadge } from '../components/StatusBadge';
 import { CardSkeleton } from '../components/LoadingSpinner';
+import labPics3 from '../assets/lab-pics3.png';
 
 function SummaryCard({ label, value, icon: Icon, color, loading }) {
   const colors = {
-    blue:   { bg: 'bg-blue-50',   icon: 'text-primary-500',  val: 'text-primary-700' },
-    green:  { bg: 'bg-green-50',  icon: 'text-green-500',    val: 'text-green-700' },
-    purple: { bg: 'bg-purple-50', icon: 'text-purple-500',   val: 'text-purple-700' },
-    amber:  { bg: 'bg-amber-50',  icon: 'text-amber-500',    val: 'text-amber-700' },
-    red:    { bg: 'bg-red-50',    icon: 'text-red-500',      val: 'text-red-700' },
+    blue:   { bg: 'bg-[#FFFDF9] border border-gold/30',   icon: 'text-crimson bg-gold-pale/60',  val: 'text-crimson-dark' },
+    green:  { bg: 'bg-[#F2F8EE] border border-laurel/30',  icon: 'text-laurel bg-laurel-soft',    val: 'text-laurel-dark' },
+    purple: { bg: 'bg-[#FFF6D6] border border-gold/40',   icon: 'text-crimson bg-white/80',      val: 'text-crimson' },
+    amber:  { bg: 'bg-[#FEF5E7] border border-amber-200', icon: 'text-flame bg-amber-100/60',   val: 'text-[#B86200]' },
+    red:    { bg: 'bg-[#FDF2F2] border border-red-300',   icon: 'text-red-600 bg-red-100',       val: 'text-red-700' },
   };
   const c = colors[color] || colors.blue;
   return (
@@ -37,7 +38,7 @@ function SummaryCard({ label, value, icon: Icon, color, loading }) {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</p>
             <p className={`text-3xl font-bold mt-1 ${c.val}`}>{value ?? '—'}</p>
           </div>
-          <div className={`p-2.5 rounded-xl bg-white/60 ${c.icon}`}>
+          <div className={`p-2.5 rounded-xl ${c.icon}`}>
             <Icon size={22} strokeWidth={1.8} />
           </div>
         </div>
@@ -50,16 +51,16 @@ function QuickAccessCard({ to, icon: Icon, title, desc }) {
   return (
     <Link
       to={to}
-      className="card p-4 flex items-center gap-3 hover:shadow-md hover:border-primary-200 transition-all group"
+      className="card p-4 flex items-center gap-3 hover:shadow-md hover:border-gold transition-all group"
     >
-      <div className="bg-primary-50 p-2.5 rounded-xl text-primary-500 group-hover:bg-primary-100 transition-colors">
+      <div className="bg-gold-pale p-2.5 rounded-xl text-crimson group-hover:bg-gold-light transition-colors">
         <Icon size={20} strokeWidth={1.8} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-sm text-gray-800">{title}</p>
+        <p className="font-semibold text-sm text-ink group-hover:text-crimson transition-colors">{title}</p>
         <p className="text-xs text-gray-500 truncate">{desc}</p>
       </div>
-      <ChevronRight size={16} className="text-gray-400 group-hover:text-primary-500 transition-colors" />
+      <ChevronRight size={16} className="text-gray-400 group-hover:text-gold transition-colors" />
     </Link>
   );
 }
@@ -179,32 +180,21 @@ export default function Home() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto animate-fade-in">
       {/* Welcome banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary-600 to-primary-800 text-white p-6 md:p-8">
-        <div className="relative z-10">
-          <h1 className="text-2xl md:text-3xl font-bold">Welcome to LabTrack!</h1>
-          <p className="mt-2 text-blue-100 max-w-xl">
+      <div
+        className="home-banner-bg relative overflow-hidden rounded-2xl text-white p-6 md:p-8 shadow-sm"
+        style={{ '--banner-bg': `url(${labPics3})` }}
+      >
+        <div className="relative z-10 max-w-xl">
+          <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Welcome to LabTrack!</h1>
+          <p className="mt-2 text-cream/95 text-sm md:text-base leading-relaxed">
             Manage laboratory equipment, submit borrowing requests, and keep track of your laboratory needs — all in one place.
           </p>
-          <p className="mt-3 text-blue-200 text-sm italic">Science today, solutions tomorrow.</p>
+          <p className="mt-3 text-gold text-sm font-semibold italic">Science today, solutions tomorrow.</p>
           {userProfile && (
-            <p className="mt-2 text-blue-100 text-sm font-medium">
+            <p className="mt-2 text-cream/90 text-sm font-medium">
               {userProfile.name} · {userProfile.gradeLevel} · {userProfile.section}
             </p>
           )}
-        </div>
-        {/* Decorative Image with Seamless Fading Effect */}
-        <div 
-          className="absolute right-0 top-0 h-full w-2/3 md:w-1/2 pointer-events-none mix-blend-overlay"
-          style={{ 
-            maskImage: 'linear-gradient(to right, transparent, black 30%)',
-            WebkitMaskImage: 'linear-gradient(to right, transparent, black 30%)'
-          }}
-        >
-          <img 
-            src="/images/flask.jpg" 
-            alt="" 
-            className="w-full h-full object-cover opacity-50"
-          />
         </div>
       </div>
 
@@ -222,7 +212,7 @@ export default function Home() {
           <div className="card-header">
             <FileText size={18} strokeWidth={1.8} />
             Recent Requests
-            <Link to={isAdmin ? '/admin/requests' : '/my-requests'} className="ml-auto text-xs text-blue-100 hover:text-white flex items-center gap-1">
+            <Link to={isAdmin ? '/admin/requests' : '/my-requests'} className="ml-auto text-xs text-gold hover:text-white flex items-center gap-1 font-medium">
               View All <ChevronRight size={14} />
             </Link>
           </div>
@@ -290,7 +280,7 @@ export default function Home() {
             <div className="card-header">
               <Calendar size={18} strokeWidth={1.8} />
               Today's Schedule
-              <span className="ml-auto text-xs text-blue-200">{formatDate(today)}</span>
+              <span className="ml-auto text-xs text-gold font-semibold">{formatDate(today)}</span>
             </div>
             <div className="p-3">
               {todaySchedule.length === 0 ? (
@@ -302,9 +292,9 @@ export default function Home() {
               ) : (
                 <div className="space-y-2">
                   {todaySchedule.map(r => (
-                    <div key={r.id} className="flex items-center gap-2 p-2 bg-primary-50 rounded-xl">
+                    <div key={r.id} className="flex items-center gap-2 p-2.5 bg-gold-pale/50 border border-gold/25 rounded-xl">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{r.experiment}</p>
+                        <p className="text-sm font-semibold text-ink truncate">{r.experiment}</p>
                         <p className="text-xs text-gray-500">{r.borrowerName}</p>
                       </div>
                       <StatusBadge status={r.status} expectedReturnDate={r.expectedReturnDate} />
@@ -333,7 +323,7 @@ export default function Home() {
                 'Keep the equipment clean, complete, and properly arranged.',
               ].map((r, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-sm text-gray-700">
-                  <CheckCircle size={16} className="text-green-500 shrink-0 mt-0.5" />
+                  <CheckCircle size={16} className="text-laurel shrink-0 mt-0.5" />
                   {r}
                 </li>
               ))}

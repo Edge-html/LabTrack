@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, addDays, durationToDays,
-  countSchoolDays, GRADE_LEVELS, DURATION_OPTIONS,
+  countSchoolDays, DURATION_OPTIONS, isValidGradeLevel,
 } from '../lib/helpers';
 
 const EMPTY_LINE = { equipmentId: '', name: '', qtyRequested: 1 };
@@ -134,6 +134,11 @@ export default function RequestEquipment() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (restricted) return;
+
+    if (!isValidGradeLevel(userProfile?.gradeLevel)) {
+      toast.error('Only Grade 11 and Grade 12 students are permitted to submit laboratory requests.');
+      return;
+    }
 
     const { formErrs, lineErrs } = validate();
     setFormErrors(formErrs);

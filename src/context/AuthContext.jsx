@@ -8,7 +8,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, firebaseConfigured } from '../lib/firebase';
-import { parseFirebaseError } from '../lib/helpers';
+import { parseFirebaseError, isValidGradeLevel } from '../lib/helpers';
 
 const AuthContext = createContext(null);
 
@@ -44,6 +44,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function register({ name, email, password, gradeLevel, section }) {
+    if (!isValidGradeLevel(gradeLevel)) {
+      throw new Error('Only Grade 11 and Grade 12 students are permitted to register.');
+    }
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const uid = cred.user.uid;
     await setDoc(doc(db, 'users', uid), {

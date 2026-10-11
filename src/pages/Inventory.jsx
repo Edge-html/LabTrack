@@ -46,7 +46,7 @@ function EquipmentDrawer({ item, categories, conditions, onClose, onSave, isAdmi
         <div className="card-header rounded-none sticky top-0 z-10">
           <Package size={18} />
           {item?.id ? 'Edit Equipment' : 'Add Equipment'}
-          <button onClick={onClose} className="ml-auto text-blue-200 hover:text-white"><X size={18} /></button>
+          <button onClick={onClose} className="ml-auto text-gold hover:text-white"><X size={18} /></button>
         </div>
         <form onSubmit={handleSave} className="p-5 space-y-4">
           <div>
@@ -182,7 +182,7 @@ function CSVImportModal({ categories, conditions, onClose, onImport }) {
         <div className="card-header rounded-t-2xl sticky top-0">
           <Upload size={18} />
           CSV Import
-          <button onClick={onClose} className="ml-auto text-blue-200 hover:text-white"><X size={18} /></button>
+          <button onClick={onClose} className="ml-auto text-gold hover:text-white"><X size={18} /></button>
         </div>
         <div className="p-5 space-y-4">
           <div className="flex gap-2">
@@ -374,7 +374,7 @@ export default function Inventory() {
               <button onClick={() => setShowCSV(true)} className="btn-secondary btn-sm">
                 <Upload size={14} /> CSV Import
               </button>
-              <button onClick={() => { setDrawerItem(null); setShowDrawer(true); }} className="btn bg-white text-primary-700 btn-sm hover:bg-blue-50">
+              <button onClick={() => { setDrawerItem(null); setShowDrawer(true); }} className="btn-secondary btn-sm">
                 <Plus size={14} /> Add Equipment
               </button>
             </div>
@@ -491,7 +491,7 @@ export default function Inventory() {
           <div className="relative bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[80vh] overflow-y-auto animate-fade-in">
             <div className="card-header rounded-t-2xl sticky top-0">
               <Plus size={18} /> Bulk Add Equipment
-              <button onClick={() => setShowBulk(false)} className="ml-auto text-blue-200 hover:text-white"><X size={18} /></button>
+              <button onClick={() => setShowBulk(false)} className="ml-auto text-gold hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-4">
               <div className="overflow-x-auto">

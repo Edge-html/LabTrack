@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { FlaskConical, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import knchsLogo from '../assets/knchs-logo.png';
+import labPics1 from '../assets/lab-pics1.png';
 
 export default function Login() {
   const { login, parseFirebaseError } = useAuth();
@@ -51,21 +53,31 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-800 to-navy flex items-center justify-center p-4">
+    <div
+      className="min-h-screen auth-bg-split flex items-center justify-center md:justify-start p-4 sm:p-6 md:pl-14 lg:pl-24 xl:pl-32 py-10"
+      style={{ '--auth-bg': `url(${labPics1})` }}
+    >
       <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl mb-4">
-            <FlaskConical size={32} className="text-white" strokeWidth={1.5} />
+        {/* Logo and title header */}
+        <div className="flex items-center gap-3.5 mb-6">
+          <div className="w-14 h-14 bg-white/10 backdrop-blur-xs rounded-2xl p-1.5 border border-gold/40 flex items-center justify-center shrink-0 shadow-md">
+            <img
+              src={knchsLogo}
+              alt="KNCHS School Seal"
+              className="w-full h-full object-contain"
+              loading="lazy"
+            />
           </div>
-          <h1 className="text-3xl font-bold text-white">LabTrack</h1>
-          <p className="text-blue-200 text-sm mt-1">KNCHS Science Laboratory System</p>
+          <div>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight leading-none">LabTrack</h1>
+            <p className="text-gold text-xs sm:text-sm font-semibold mt-1">KNCHS SHS Laboratory System</p>
+          </div>
         </div>
 
-        <div className="card p-8">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 border border-gold/20">
           {!resetMode ? (
             <>
-              <h2 className="text-xl font-semibold text-gray-800 mb-6">Sign in to your account</h2>
+              <h2 className="text-xl font-bold text-ink mb-6">Sign in to your account</h2>
               {error && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">
                   {error}
@@ -117,26 +129,29 @@ export default function Login() {
               </form>
               <div className="mt-4 text-center text-sm">
                 <button
+                  type="button"
                   onClick={() => { setResetMode(true); setError(''); }}
-                  className="text-primary-500 hover:underline"
+                  className="text-crimson hover:text-gold transition-colors font-medium hover:underline"
                 >
                   Forgot password?
                 </button>
               </div>
               <div className="mt-4 text-center text-sm text-gray-600">
                 Don't have an account?{' '}
-                <Link to="/register" className="text-primary-500 font-medium hover:underline">Sign up</Link>
+                <Link to="/register" className="text-crimson hover:text-gold transition-colors font-semibold hover:underline">
+                  Sign up
+                </Link>
               </div>
             </>
           ) : (
             <>
-              <h2 className="text-xl font-semibold text-gray-800 mb-2">Reset password</h2>
+              <h2 className="text-xl font-bold text-ink mb-2">Reset password</h2>
               <p className="text-sm text-gray-500 mb-6">Enter your email and we'll send a reset link.</p>
               {error && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>
               )}
               {resetSent ? (
-                <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-xl text-sm mb-4">
+                <div className="p-3 bg-green-50 border border-green-200 text-laurel-dark font-medium rounded-xl text-sm mb-4">
                   Check your inbox for a password reset link.
                 </div>
               ) : (
@@ -159,8 +174,9 @@ export default function Login() {
                 </form>
               )}
               <button
+                type="button"
                 onClick={() => { setResetMode(false); setResetSent(false); setError(''); }}
-                className="mt-4 text-sm text-primary-500 hover:underline"
+                className="mt-4 text-sm text-crimson hover:text-gold transition-colors font-medium hover:underline"
               >
                 ← Back to sign in
               </button>

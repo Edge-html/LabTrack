@@ -1,24 +1,43 @@
 import React from 'react';
-import { FlaskConical, Shield, Users, BookOpen, Heart } from 'lucide-react';
+import { Shield, Users, BookOpen, Heart } from 'lucide-react';
+import knchsLogo from '../assets/knchs-logo.png';
+import labPics2 from '../assets/lab-pics2.png';
 
 export default function About() {
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       <div className="card overflow-hidden">
-        <div className="bg-gradient-to-r from-primary-600 to-primary-800 text-white p-8 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-white/10 rounded-2xl mb-4">
-            <FlaskConical size={32} strokeWidth={1.5} />
+        {/* Header with lab-pics2 photo and natural center gradient fade */}
+        <div
+          className="relative text-white p-8 sm:p-10 text-center overflow-hidden"
+          style={{
+            background: `radial-gradient(ellipse at center, rgba(156, 18, 24, 0.94) 0%, rgba(156, 18, 24, 0.78) 45%, rgba(156, 18, 24, 0.25) 80%, transparent 100%), url(${labPics2}) center / cover no-repeat`,
+            backgroundColor: '#6E0B10',
+          }}
+        >
+          <div className="relative z-10">
+            {/* Logo in semi-transparent rounded square with gold border */}
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-black/35 backdrop-blur-xs rounded-2xl mb-4 border-2 border-gold shadow-lg p-2.5">
+              <img
+                src={knchsLogo}
+                alt="KNCHS School Seal"
+                className="w-full h-full object-contain"
+                loading="lazy"
+              />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">LabTrack</h1>
+            <p className="text-cream text-sm mt-1 font-semibold tracking-wide">KNCHS SHS Laboratory System</p>
+            <p className="text-gold italic text-sm mt-2.5 font-medium">Science today, solutions tomorrow.</p>
           </div>
-          <h1 className="text-2xl font-bold">LabTrack</h1>
-          <p className="text-blue-100 text-sm mt-1">KNCHS SHS Laboratory System</p>
-          <p className="text-blue-200 italic text-sm mt-3">Science today, solutions tomorrow.</p>
         </div>
-        <div className="p-6 space-y-4">
-          <p className="text-sm text-gray-600">
+
+        <div className="p-6 space-y-5">
+          <p className="text-sm text-gray-700 leading-relaxed">
             LabTrack is the official laboratory equipment management system for Koronadal National Comprehensive High School (KNCHS).
             It streamlines the process of tracking, borrowing, and returning science laboratory equipment.
           </p>
 
+          {/* Feature tiles with pale gold/cream background and crimson icons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
               { icon: Shield, title: 'Safe & Accountable', desc: 'Every borrow is tracked with full accountability and digital records.' },
@@ -26,18 +45,18 @@ export default function About() {
               { icon: BookOpen, title: 'Policy-Driven', desc: 'Built around school policies with customizable rules and penalties.' },
               { icon: Heart, title: 'Better Science', desc: 'Helping students focus on experiments, not paperwork.' },
             ].map((f, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 bg-primary-50 rounded-xl">
-                <f.icon size={18} className="text-primary-500 shrink-0 mt-0.5" strokeWidth={1.8} />
+              <div key={i} className="flex items-start gap-3 p-3.5 bg-gold-pale/60 border border-gold/30 rounded-xl">
+                <f.icon size={20} className="text-crimson shrink-0 mt-0.5" strokeWidth={1.8} />
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">{f.title}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{f.desc}</p>
+                  <p className="text-sm font-bold text-ink">{f.title}</p>
+                  <p className="text-xs text-gray-600 mt-0.5">{f.desc}</p>
                 </div>
               </div>
             ))}
           </div>
 
           <div className="border-t border-gray-100 pt-4 text-center">
-            <p className="text-xs text-gray-400">© {new Date().getFullYear()} KNCHS Laboratory System. All rights reserved.</p>
+            <p className="text-xs text-gray-400">© {new Date().getFullYear()} KNCHS SHS Laboratory System. All rights reserved.</p>
             <p className="text-xs text-gray-400 mt-1">Built with React, Firebase, and Tailwind CSS.</p>
           </div>
         </div>

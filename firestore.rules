@@ -17,16 +17,18 @@ service cloud.firestore {
       // A signed-in user can read their own doc; admin can read all
       allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
 
-      // Create: only with role="student", matching uid, no restriction fields
+      // Create: only with role="student", matching uid, valid grade level (Grade 11 or 12), no restriction fields
       allow create: if isSignedIn()
         && request.auth.uid == uid
         && request.resource.data.role == 'student'
+        && (!('gradeLevel' in request.resource.data) || request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'])
         && !('borrowRestrictedUntil' in request.resource.data)
         && !('restrictionReason' in request.resource.data);
 
-      // Update own doc: cannot change role, borrowRestrictedUntil, or restrictionReason
+      // Update own doc: cannot change role, borrowRestrictedUntil, or restrictionReason; gradeLevel must be 11 or 12 if changed
       allow update: if isSignedIn()
         && request.auth.uid == uid
+        && (!('gradeLevel' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'])
         && !('role' in request.resource.data.diff(resource.data).affectedKeys())
         && !('borrowRestrictedUntil' in request.resource.data.diff(resource.data).affectedKeys())
         && !('restrictionReason' in request.resource.data.diff(resource.data).affectedKeys());
