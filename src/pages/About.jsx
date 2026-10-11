@@ -1,17 +1,17 @@
 import React from 'react';
 import { Shield, Users, BookOpen, Heart } from 'lucide-react';
 import knchsLogo from '../assets/knchs-logo.png';
-import labPics2 from '../assets/lab-pics2.png';
+import labPics3 from '../assets/lab-pics3.png';
 
 export default function About() {
   return (
     <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
       <div className="card overflow-hidden">
-        {/* Header with lab-pics2 photo and natural center gradient fade */}
+        {/* Header with lab-pics3 photo and natural center gradient fade */}
         <div
           className="relative text-white p-8 sm:p-10 text-center overflow-hidden"
           style={{
-            background: `linear-gradient(to bottom, rgba(110, 11, 16, 0.8), rgba(0, 0, 0, 0.7)), url(${labPics2}) center / cover no-repeat`,
+            background: `linear-gradient(to bottom, rgba(110, 11, 16, 0.8), rgba(0, 0, 0, 0.7)), url(${labPics3}) center / cover no-repeat`,
             backgroundColor: '#1a1a1a',
           }}
         >

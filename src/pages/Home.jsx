@@ -12,9 +12,8 @@ import {
   orderBy, limit, getDoc, doc,
 } from 'firebase/firestore';
 import { getTodayManila, formatDate, isOverdue } from '../lib/helpers';
-import { StatusBadge } from '../components/StatusBadge';
 import { CardSkeleton } from '../components/LoadingSpinner';
-import labPics3 from '../assets/lab-pics3.png';
+import labPics2 from '../assets/lab-pics2.png';
 
 function SummaryCard({ label, value, icon: Icon, color, loading }) {
   const colors = {
@@ -190,7 +189,7 @@ export default function Home() {
       {/* Welcome banner */}
       <div
         className="home-banner-bg relative overflow-hidden rounded-2xl text-white p-6 md:p-8 shadow-sm"
-        style={{ '--banner-bg': `url(${labPics3})` }}
+        style={{ '--banner-bg': `url(${labPics2})` }}
       >
         <div className="relative z-10 max-w-xl">
           <h1 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Welcome to LabTrack!</h1>
