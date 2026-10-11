@@ -66,10 +66,10 @@ export function Sidebar({ mobileOpen, onClose }) {
     <div className="relative flex flex-col h-full bg-crimson-dark text-white border-r border-gold/20 overflow-hidden">
       {/* Subtle watermark in sidebar background */}
       <div 
-        className="absolute -right-14 top-1/2 -translate-y-1/2 pointer-events-none opacity-[0.06] select-none z-0"
+        className="absolute -right-12 top-[58%] -translate-y-1/2 pointer-events-none opacity-[0.08] select-none z-0"
         aria-hidden="true"
       >
-        <img src={knchsLogo} alt="" className="w-64 h-64 object-contain filter brightness-125" />
+        <img src={knchsLogo} alt="" className="w-72 h-72 object-contain filter brightness-125" />
       </div>
 
       {/* Logo */}
@@ -123,8 +123,7 @@ export function Sidebar({ mobileOpen, onClose }) {
 
       {/* Footer */}
       <div className="px-5 py-4 border-t border-white/10">
-        <div className="flex flex-col items-center gap-2 mb-3 text-gold">
-          <MicroscopeSVG />
+        <div className="flex flex-col items-center gap-1.5 mb-3 text-gold">
           <p className="text-center text-[11px] text-cream/80 leading-snug">
             Safe Equipment.<br />Better Experiments.<br />Brighter Futures.
           </p>

@@ -5,7 +5,7 @@ import { Sidebar, Header } from './Layout';
 import { PageLoader } from './LoadingSpinner';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import knchsLogo from '../assets/knchs-logo.png';
+import labPics4 from '../assets/lab-pics4.jpg';
 
 export function RequireAuth() {
   const { currentUser, loading } = useAuth();
@@ -49,16 +49,17 @@ function AppShell() {
 
   return (
     <div className="relative flex h-screen overflow-hidden bg-cream">
-      {/* Background Watermark for all application pages */}
+      {/* Full-page fitted background image using lab-pics4 */}
       <div
-        className="fixed inset-0 pointer-events-none flex items-center justify-center lg:pl-56 z-0 overflow-hidden"
+        className="fixed inset-0 pointer-events-none lg:left-56 z-0 overflow-hidden"
         aria-hidden="true"
       >
         <img
-          src={knchsLogo}
+          src={labPics4}
           alt=""
-          className="w-[380px] sm:w-[500px] md:w-[620px] max-w-[85vw] object-contain opacity-[0.06] select-none pointer-events-none"
+          className="w-full h-full object-cover opacity-[0.09] select-none pointer-events-none filter saturate-50"
         />
+        <div className="absolute inset-0 bg-cream/70" />
       </div>
 
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
