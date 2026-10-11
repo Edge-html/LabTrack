@@ -65,13 +65,22 @@ export function Sidebar({ mobileOpen, onClose }) {
   const sidebarContent = (
     <div className="flex flex-col h-full bg-crimson-dark text-white border-r border-gold/20">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-        <div className="bg-white/10 rounded-xl p-1.5 border border-gold/30 shrink-0">
-          <img src={knchsLogo} alt="KNCHS Logo" className="w-6 h-6 object-contain" />
+      <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 bg-black/10">
+        <div className="relative group shrink-0">
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[2px] opacity-60"></div>
+          <img 
+            src={knchsLogo} 
+            alt="KNCHS Seal" 
+            className="relative w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow-md ring-2 ring-gold/60" 
+          />
         </div>
-        <div>
-          <div className="font-bold text-lg leading-tight text-white tracking-wide">LabTrack</div>
-          <div className="text-[10px] text-gold font-medium leading-tight">KNCHS Laboratory System</div>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-xl text-white tracking-tight">Lab<span className="text-gold">Track</span></span>
+          </div>
+          <div className="text-[10px] font-bold text-cream/90 tracking-wider uppercase truncate mt-0.5">
+            KNCHS SHS Lab System
+          </div>
         </div>
         {mobileOpen !== undefined && (
           <button onClick={onClose} className="ml-auto text-cream/70 hover:text-white lg:hidden">
@@ -166,8 +175,11 @@ export function Header({ onMenuClick, notifCount }) {
 
       {/* Brand - visible on mobile */}
       <div className="flex items-center gap-2 lg:hidden">
-        <img src={knchsLogo} alt="KNCHS Logo" className="w-5 h-5 object-contain" />
-        <span className="font-bold text-base text-white">LabTrack</span>
+        <div className="relative shrink-0">
+          <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[1px] opacity-50"></div>
+          <img src={knchsLogo} alt="KNCHS Logo" className="relative w-7 h-7 rounded-full object-contain bg-white p-px shadow-sm ring-1 ring-gold/60" />
+        </div>
+        <span className="font-bold text-lg text-white tracking-tight">Lab<span className="text-gold">Track</span></span>
       </div>
 
       {/* Desktop subtitle */}
