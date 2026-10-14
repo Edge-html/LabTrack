@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Settings, Users, Tag, Sliders, BookOpen, Phone,
+  Settings, Users, Tag, Sliders, BookOpen,
   Plus, Trash2, Edit2, Save, X, Database, AlertTriangle,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -253,6 +253,208 @@ function UsersTab() {
   );
 }
 
+const EMPTY_CONTACT = { name: '', role: '', email: '', phone: '', location: '' };
+
+/**
+ * Manager for the list of laboratory contacts shown on the student dashboard.
+ * Backwards compatible: a legacy single `settings/contact` doc is migrated
+ * into the list on first load so nothing is lost.
+ */
+function ContactsTab() {
+  const toast = useToast();
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ ...EMPTY_CONTACT });
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'settings', 'contacts'));
+        if (snap.exists() && Array.isArray(snap.data().list)) {
+          setContacts(snap.data().list);
+          return;
+        }
+        // Migrate the old single-contact document.
+        const legacy = await getDoc(doc(db, 'settings', 'contact'));
+        if (legacy.exists()) {
+          const d = legacy.data();
+          if (d.name || d.email || d.phone || d.location) {
+            setContacts([{ ...EMPTY_CONTACT, ...d, id: `c_${Date.now()}` }]);
+            toast.info('Converted your existing contact into the new list. Save to keep it.');
+          }
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function persist(next) {
+    await setDoc(doc(db, 'settings', 'contacts'), { list: next, updatedAt: serverTimestamp() });
+    setContacts(next);
+  }
+
+  function startEdit(c) {
+    setEditingId(c.id);
+    setForm({ name: c.name || '', role: c.role || '', email: c.email || '', phone: c.phone || '', location: c.location || '' });
+    setErr('');
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setForm({ ...EMPTY_CONTACT });
+    setErr('');
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!form.name.trim() && !form.email.trim() && !form.phone.trim()) {
+      setErr('Add at least a name, email, or phone number.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const entry = { ...form, id: editingId || `c_${Date.now()}`, updatedAt: Date.now() };
+      const next = editingId
+        ? contacts.map(c => (c.id === editingId ? entry : c))
+        : [...contacts, entry];
+      await persist(next);
+      toast.success(editingId ? 'Contact updated.' : 'Contact added.');
+      resetForm();
+    } catch (err) {
+      toast.error('Failed: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(c) {
+    try {
+      await persist(contacts.filter(x => x.id !== c.id));
+      if (editingId === c.id) resetForm();
+      toast.success('Contact removed.');
+    } catch (err) {
+      toast.error('Failed: ' + err.message);
+    }
+  }
+
+  function setField(k, v) {
+    setForm(f => ({ ...f, [k]: v }));
+    setErr('');
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {/* Existing contacts */}
+      <div>
+        <h3 className="text-sm font-bold text-ink mb-2">
+          Saved Contacts
+          <span className="ml-2 text-xs font-medium text-gray-400">{contacts.length}</span>
+        </h3>
+
+        {loading ? (
+          <div className="skeleton h-20 rounded" />
+        ) : contacts.length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <Users size={24} className="mx-auto text-gray-400 mb-1.5" />
+            <p className="text-sm font-medium text-gray-600">No contacts yet.</p>
+            <p className="text-xs text-gray-400 mt-0.5">Add the laboratory staff below.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            {contacts.map(c => (
+              <div
+                key={c.id}
+                className={`p-3 rounded-xl border bg-white ${
+                  editingId === c.id ? 'border-crimson ring-1 ring-crimson/20' : 'border-gray-200'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-gold-pale text-crimson flex items-center justify-center font-bold text-sm shrink-0">
+                    {(c.name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-ink truncate">{c.name || '—'}</p>
+                    {c.role && <p className="text-xs text-crimson font-medium truncate">{c.role}</p>}
+                    <div className="text-xs text-gray-500 mt-0.5 space-y-0.5">
+                      {c.email && <p className="truncate">{c.email}</p>}
+                      {c.phone && <p>{c.phone}</p>}
+                      {c.location && <p className="text-gray-400 truncate">{c.location}</p>}
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => startEdit(c)} className="btn-ghost btn-sm p-1.5 text-gray-500" title="Edit">
+                      <Edit2 size={13} />
+                    </button>
+                    <button onClick={() => handleDelete(c)} className="btn-ghost btn-sm p-1.5 text-red-400" title="Remove">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Add / edit form */}
+      <form onSubmit={handleSave} className="space-y-3 h-fit">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-bold text-ink">
+            {editingId ? 'Edit Contact' : 'Add Contact'}
+          </h3>
+          {editingId && (
+            <button type="button" onClick={resetForm} className="btn-ghost btn-sm ml-auto">
+              <X size={13} /> Cancel
+            </button>
+          )}
+        </div>
+
+        <div>
+          <label className="label">Contact Name / Title *</label>
+          <input className="input" value={form.name}
+            onChange={e => setField('name', e.target.value)}
+            placeholder="e.g. June Vincent Camoro" />
+        </div>
+        <div>
+          <label className="label">Role / Designation</label>
+          <input className="input" value={form.role}
+            onChange={e => setField('role', e.target.value)}
+            placeholder="e.g. Assigned Dry Lab Teacher" />
+        </div>
+        <div>
+          <label className="label">Email</label>
+          <input type="email" className="input" value={form.email}
+            onChange={e => setField('email', e.target.value)}
+            placeholder="name@knchs.edu.ph" />
+        </div>
+        <div>
+          <label className="label">Phone</label>
+          <input className="input" value={form.phone}
+            onChange={e => setField('phone', e.target.value)} placeholder="09XX XXX XXXX" />
+        </div>
+        <div>
+          <label className="label">Location / Room</label>
+          <input className="input" value={form.location}
+            onChange={e => setField('location', e.target.value)}
+            placeholder="e.g. Physics/Dry Laboratory — 301" />
+        </div>
+
+        {err && <p className="text-xs text-red-600">{err}</p>}
+
+        <button type="submit" disabled={saving} className="btn-primary btn-sm w-full justify-center">
+          <Save size={14} /> {saving ? 'Saving…' : editingId ? 'Update Contact' : 'Add Contact'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function AdminSettings() {
   const toast = useToast();
   const [tab, setTab] = useState(0);
@@ -261,25 +463,21 @@ export default function AdminSettings() {
   const [seeding, setSeeding] = useState(false);
   const [seedDone, setSeedDone] = useState(false);
   const [showSeedConfirm, setShowSeedConfirm] = useState(false);
-  const [contact, setContact] = useState({ name: '', email: '', phone: '', location: '' });
-  const [savingContact, setSavingContact] = useState(false);
 
-  const TABS = ['Users & Roles', 'Categories', 'Conditions', 'Penalty Rules', 'Contact Info', 'Seed Data'];
+  const TABS = ['Users & Roles', 'Categories', 'Conditions', 'Penalty Rules', 'Contacts', 'Seed Data'];
 
   useEffect(() => {
     async function load() {
-      const [catSnap, condSnap, penSnap, contactSnap] = await Promise.all([
+      const [catSnap, condSnap, penSnap] = await Promise.all([
         getDoc(doc(db, 'settings', 'categories')),
         getDoc(doc(db, 'settings', 'conditions')),
         getDoc(doc(db, 'settings', 'penaltyRules')),
-        getDoc(doc(db, 'settings', 'contact')),
       ]);
       setSettings({
         categories: catSnap.exists() ? catSnap.data().list : DEFAULT_CATEGORIES,
         conditions: condSnap.exists() ? condSnap.data().list : DEFAULT_CONDITIONS,
         penaltyRules: penSnap.exists() ? penSnap.data().rules : DEFAULT_PENALTY_RULES,
       });
-      if (contactSnap.exists()) setContact(contactSnap.data());
       setLoading(false);
     }
     load();
@@ -294,14 +492,6 @@ export default function AdminSettings() {
     await setDoc(doc(db, 'settings', 'penaltyRules'), { rules, updatedAt: serverTimestamp() }, { merge: true });
     setSettings(s => ({ ...s, penaltyRules: rules }));
     toast.success('Penalty rules saved.');
-  }
-
-  async function saveContact(e) {
-    e.preventDefault();
-    setSavingContact(true);
-    await setDoc(doc(db, 'settings', 'contact'), { ...contact, updatedAt: serverTimestamp() }, { merge: true });
-    setSavingContact(false);
-    toast.success('Contact info saved.');
   }
 
   async function seedData() {
@@ -539,29 +729,7 @@ export default function AdminSettings() {
               </div>
             </div>
           )}
-          {tab === 4 && (
-            <form onSubmit={saveContact} className="space-y-3 max-w-md">
-              <div>
-                <label className="label">Contact Name / Title</label>
-                <input className="input" value={contact.name} onChange={e => setContact(c => ({ ...c, name: e.target.value }))} placeholder="e.g. Mr. dela Cruz, Laboratory Staff" />
-              </div>
-              <div>
-                <label className="label">Email</label>
-                <input type="email" className="input" value={contact.email} onChange={e => setContact(c => ({ ...c, email: e.target.value }))} />
-              </div>
-              <div>
-                <label className="label">Phone</label>
-                <input className="input" value={contact.phone || ''} onChange={e => setContact(c => ({ ...c, phone: e.target.value }))} />
-              </div>
-              <div>
-                <label className="label">Location / Room</label>
-                <input className="input" value={contact.location || ''} onChange={e => setContact(c => ({ ...c, location: e.target.value }))} />
-              </div>
-              <button type="submit" disabled={savingContact} className="btn-primary btn-sm">
-                <Save size={14} /> {savingContact ? 'Saving…' : 'Save Contact Info'}
-              </button>
-            </form>
-          )}
+          {tab === 4 && <ContactsTab />}
           {tab === 5 && (
             <div className="space-y-4">
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">

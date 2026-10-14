@@ -75,7 +75,7 @@ export default function Home() {
   const [todayLabBookings, setTodayLabBookings] = useState([]);
   const [reviewQueue, setReviewQueue] = useState(0);
   const [todaySchedule, setTodaySchedule] = useState([]);
-  const [contact, setContact] = useState(null);
+  const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -139,9 +139,18 @@ export default function Home() {
         }
         setTodaySchedule(schedDocs);
 
-        // Contact
-        const contactSnap = await getDoc(doc(db, 'settings', 'contact'));
-        if (contactSnap.exists()) setContact(contactSnap.data());
+        // Contacts
+        const contactSnap = await getDoc(doc(db, 'settings', 'contacts'));
+        if (contactSnap.exists() && Array.isArray(contactSnap.data().list)) {
+          setContacts(contactSnap.data().list);
+        } else {
+          // Fall back to the legacy single-contact document.
+          const legacy = await getDoc(doc(db, 'settings', 'contact'));
+          if (legacy.exists()) {
+            const d = legacy.data();
+            setContacts([{ ...d, id: 'legacy' }]);
+          }
+        }
 
         // Laboratory bookings
         let labDocs = [];
@@ -504,21 +513,64 @@ export default function Home() {
             <p className="text-sm text-gray-600 mb-3">
               Contact the laboratory staff for any concerns or inquiries.
             </p>
-            {contact && (
-              <div className="space-y-1 text-sm text-gray-700 mb-4">
-                {contact.name && <p className="font-medium">{contact.name}</p>}
-                {contact.email && <p>{contact.email}</p>}
-                {contact.phone && <p>{contact.phone}</p>}
-                {contact.location && <p className="text-gray-500">{contact.location}</p>}
+
+            {contacts.length > 0 ? (
+              <div className="space-y-2.5 mb-4 max-h-64 overflow-y-auto pr-1">
+                {contacts.map(c => (
+                  <div
+                    key={c.id}
+                    className="p-3 rounded-xl bg-gold-pale/30 border border-gold/25"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-crimson text-white flex items-center justify-center font-bold text-xs shrink-0">
+                        {(c.name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-ink truncate">{c.name}</p>
+                        {c.role && (
+                          <p className="text-xs text-crimson font-medium truncate">{c.role}</p>
+                        )}
+                        {c.location && (
+                          <p className="text-xs text-gray-500 truncate">{c.location}</p>
+                        )}
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                          {c.email && (
+                            <a
+                              href={`mailto:${c.email}`}
+                              className="text-xs font-medium truncate hover:underline"
+                            >
+                              {c.email}
+                            </a>
+                          )}
+                          {c.phone && (
+                            <a
+                              href={`tel:${c.phone.replace(/\s/g, '')}`}
+                              className="text-xs text-gray-600 hover:underline"
+                            >
+                              {c.phone}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
+            ) : (
+              <p className="text-sm text-gray-400 mb-4">
+                No contact details have been set yet.
+              </p>
             )}
-            <a
-              href={contact?.email ? `mailto:${contact.email}` : '#'}
-              className="btn-primary w-full justify-center"
-            >
-              <MessageCircle size={16} />
-              Contact Staff
-            </a>
+
+            {contacts.some(c => c.email) && (
+              <a
+                href={`mailto:${contacts[0].email}`}
+                className="btn-primary w-full justify-center"
+              >
+                <MessageCircle size={16} />
+                Email Laboratory Staff
+              </a>
+            )}
           </div>
         </div>
       </div>

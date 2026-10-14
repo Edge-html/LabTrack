@@ -203,7 +203,7 @@ penalties/{id}
 settings/categories  → { list: string[] }
 settings/conditions  → { list: string[] }
 settings/penaltyRules → { rules: object[] }
-settings/contact     → { name, email, phone, location }
+settings/contacts    → { list: [{ id, name, role, email, phone, location }] }
 ```
 
 ### Return-proof photos
