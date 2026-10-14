@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle,
-  Calendar, User, BookOpen, Clock,
+  Calendar, User, BookOpen, Clock, Camera,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -238,6 +238,15 @@ export default function RequestEquipment() {
               </p>
             </div>
           )}
+
+          <div className="flex items-start gap-2.5 p-3 bg-primary-50 border border-primary-100 rounded-xl">
+            <Camera size={16} className="text-crimson shrink-0 mt-0.5" />
+            <p className="text-sm text-gray-700">
+              <span className="font-semibold text-crimson">Photo proof is required when you return this equipment.</span>{' '}
+              The laboratory staff will check your photo and approve the return, or flag it if the
+              equipment is damaged or not properly cleaned.
+            </p>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

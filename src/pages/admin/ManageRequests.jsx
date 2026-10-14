@@ -5,19 +5,20 @@ import {
   AlertTriangle, Package, Clock,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   collection, query, onSnapshot, orderBy, limit,
   runTransaction, doc, getDoc, serverTimestamp, updateDoc,
   where, getDocs,
 } from 'firebase/firestore';
-import { formatDate, getTodayManila } from '../../lib/helpers';
+import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 
 const TABS = ['Pending', 'All Requests'];
-const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'returned'];
+const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'return_submitted', 'return_flagged', 'returned'];
 
 function RejectModal({ request, onClose, onConfirm }) {
   const [reason, setReason] = useState('');
@@ -121,6 +122,7 @@ function ApproveModal({ request, onClose, onConfirm }) {
 
 export default function ManageRequests() {
   const toast = useToast();
+  const { userProfile } = useAuth();
   const [tab, setTab] = useState(0);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -175,6 +177,8 @@ export default function ManageRequests() {
         tx.update(reqRef, {
           status: 'approved',
           staffRemarks: remarks,
+          approvedAt: serverTimestamp(),
+          approvedBy: userProfile?.name || 'Laboratory Staff',
           items: adjustedItems.map(item => ({
             ...item,
             qtyRequested: item.qtyApproved || item.qtyRequested,
@@ -313,7 +317,10 @@ export default function ManageRequests() {
                       </div>
                     </td>
                     <td data-label="Exp. Date">{formatDate(r.experimentDate)}</td>
-                    <td data-label="Requested">{formatDate(r.requestDate)}</td>
+                    <td data-label="Requested">
+                      <p className="text-sm">{formatTimestamp(r.createdAt)}</p>
+                      <p className="text-xs text-gray-400">{timeAgo(r.createdAt)}</p>
+                    </td>
                     <td data-label="Status">
                       <StatusBadge status={r.status} expectedReturnDate={r.expectedReturnDate} />
                     </td>

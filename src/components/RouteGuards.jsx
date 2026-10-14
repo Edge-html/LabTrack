@@ -31,20 +31,35 @@ function AppShell() {
 
   useEffect(() => {
     if (!userProfile || !db) return;
-    let q;
-    if (isAdmin) {
-      q = query(collection(db, 'requests'), where('status', '==', 'pending'));
-    } else {
-      q = query(
-        collection(db, 'requests'),
-        where('userId', '==', userProfile.uid),
-        where('status', '==', 'approved')
-      );
-    }
-    const unsub = onSnapshot(q, (snap) => {
-      setNotifCount(snap.size);
-    }, () => {});
-    return unsub;
+
+    // Each stream contributes its own count; the badge shows their sum.
+    const sources = isAdmin
+      ? [
+          ['pendingRequests', query(collection(db, 'requests'), where('status', '==', 'pending'))],
+          ['returnProofs', query(collection(db, 'requests'), where('status', '==', 'return_submitted'))],
+          ['labBookings', query(collection(db, 'labBookings'), where('status', '==', 'pending'))],
+        ]
+      : [
+          ['toCollect', query(collection(db, 'requests'), where('userId', '==', userProfile.uid), where('status', '==', 'approved'))],
+          ['returnAction', query(collection(db, 'requests'), where('userId', '==', userProfile.uid), where('status', '==', 'return_flagged'))],
+          ['labAction', query(collection(db, 'labBookings'), where('userId', '==', userProfile.uid), where('status', 'in', ['approved', 'cancelled']))],
+        ];
+
+    const counts = {};
+    sources.forEach(([key]) => { counts[key] = 0; });
+
+    const update = () => {
+      setNotifCount(Object.values(counts).reduce((a, b) => a + b, 0));
+    };
+
+    const unsubs = sources.map(([key, q]) =>
+      onSnapshot(q, (snap) => {
+        counts[key] = snap.size;
+        update();
+      }, () => {})
+    );
+
+    return () => unsubs.forEach(u => u());
   }, [userProfile, isAdmin]);
 
   return (

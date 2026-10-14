@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 const required = [
   'VITE_FIREBASE_API_KEY',
@@ -16,7 +17,7 @@ const missing = required.filter((key) => !import.meta.env[key]);
 export const firebaseConfigured = missing.length === 0;
 export const missingVars = missing;
 
-let app, auth, db;
+let app, auth, db, storage;
 
 if (firebaseConfigured) {
   const firebaseConfig = {
@@ -32,6 +33,7 @@ if (firebaseConfigured) {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
+  storage = getStorage(app);
 }
 
-export { app, auth, db };
+export { app, auth, db, storage };

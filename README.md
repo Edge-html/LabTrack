@@ -75,6 +75,71 @@ Output is in `dist/`.
 2. Paste the contents of `firestore.rules`
 3. Click **Publish**
 
+### 4. Cloud Storage (needed for return-proof photos)
+
+1. Go to **Firebase Console → Storage**
+2. Click **Get started** (same region as Firestore)
+3. Paste the contents of `storage.rules` into the Rules tab and **Publish**
+
+Without Storage enabled, students can still borrow equipment but the return-photo upload will fail.
+
+### 5. Firestore Indexes (CLI)
+
+Some queries need composite indexes. Deploy them all at once with the Firebase CLI:
+
+```bash
+npm install -g firebase-tools
+firebase login
+firebase use --add          # select your project
+firebase deploy --only firestore:rules,firestore:indexes,storage
+```
+
+---
+
+## Booking & Return Workflows
+
+### Equipment returns now require photo proof
+
+```
+pending ──approve──▶ approved ──release──▶ borrowed
+                                                  │
+                              student uploads photo│
+                                                  ▼
+                                          return_submitted
+                                                  │
+                            ┌─────────────────────┴─────────────────────┐
+                     "clean & no damage"                     "damaged" / "not cleaned"
+                            │                                          │
+                            ▼                                          ▼
+                        returned                              return_flagged
+                   (stock restored)                 (student alerted: report to the lab)
+                                                                │
+                                                    student re-uploads photo
+                                                                └──────▶ return_submitted
+```
+
+- Students upload the photo from **My Requests** or the request detail page.
+- Admin reviews each photo in **Borrowing & Returns → Review Return**.
+- A flagged return keeps the equipment *out of stock* until it is settled.
+- Staff can **Settle & Return** a flagged request once the assessment is resolved.
+
+### Laboratory Room Booking
+
+A completely separate form from equipment borrowing (`/lab-booking`), covering
+**Room 103** and **Room 301**.
+
+- Required info: name, date & time of the proposed booking, laboratory room, purpose, and student ID.
+- The form checks for slot conflicts against existing pending/approved bookings.
+- Students track and cancel their own bookings in **My Lab Bookings**.
+- Admin approves/rejects and records when the room was used and handed back.
+
+### Account Warnings
+
+Admins can record a formal warning against a student account (**Account Warnings**),
+optionally suspending borrowing and lab-booking privileges for a set number of days.
+Warnings appear on the student's dashboard, on their request pages, and can be
+resolved or reopened later.
+
 ---
 
 ## Firestore Data Model
@@ -91,10 +156,37 @@ requests/{id}
   userId, borrowerName, gradeLevel, section, teacher, experiment,
   experimentDate, requestDate, duration, expectedReturnDate,
   actualReturnDate, releaseDate,
-  status: pending | approved | rejected | borrowed | returned
+  status: pending | approved | rejected | borrowed
+        | return_submitted | return_flagged | returned
   staffRemarks, lateRequestFlag,
+  createdAt,                                   ← request SENT time
+  approvedAt, releasedAt, returnedAt,          ← lifecycle timestamps
+  returnProof: { url, path, fileName, contentType, size, uploadedAt, attempt },
+  returnSubmittedAt, returnSubmittedNote, proposedReturnDate, returnAttempt,
+  returnReview: { verdict: clean|damaged|not_cleaned, remarks,
+                  reviewedBy, reviewedByName, reviewedAt,
+                  requiresLabVisit, method },
   items[]: { equipmentId, name, qtyRequested, qtyReleased,
              qtyReturned, qtyDamaged, qtyMissing, conditionOnReturn }
+
+labBookings/{id}
+  userId, studentName, studentId, gradeLevel, section,
+  labRoom: "Room 103" | "Room 301",
+  bookingDate, startTime, endTime, purpose, teacher, participants,
+  status: pending | approved | rejected | completed | cancelled,
+  staffRemarks,
+  submittedAt,                                 ← request SENT time
+  approvedAt, approvedBy, checkedInAt, returnedAt,
+  cancelledAt, rejectedAt, createdAt, updatedAt
+
+warnings/{id}
+  userId, studentName, gradeLevel, section,
+  type: not_returned | damaged_equipment | not_cleaned | lost_equipment
+      | late_return | lab_booking | other,
+  severity: warning | major | critical,
+  message, requestId, labBookingId, sourceType,
+  issuedBy, issuedByName, issuedAt,
+  resolved, resolvedAt, resolvedBy, resolutionNote
 
 penalties/{id}
   requestId, userId, studentName, violationType, description,
@@ -105,6 +197,14 @@ settings/conditions  → { list: string[] }
 settings/penaltyRules → { rules: object[] }
 settings/contact     → { name, email, phone, location }
 ```
+
+### Firebase Storage
+
+```
+returnProofs/{uid}/{requestId}/{timestamp}-{filename}
+```
+
+Ownership-scoped: the owning student uploads, the student and any admin can read.
 
 ---
 
@@ -154,7 +254,7 @@ This seeds:
 
 - **React 18** + **Vite 5** — frontend framework and build tool
 - **Tailwind CSS v3** — utility-first styling
-- **Firebase v10** — Auth + Firestore (Spark / free plan compatible)
+- **Firebase v10** — Auth + Firestore + Storage (Spark / free plan compatible)
 - **react-router-dom v6** — client-side routing
 - **lucide-react** — icon library
 - **papaparse** — CSV parsing for bulk import
@@ -166,7 +266,10 @@ This seeds:
 - [ ] Firebase: Enable Email/Password authentication
 - [ ] Firebase: Create Firestore database (production mode, asia-southeast1)
 - [ ] Firebase: Paste and publish `firestore.rules`
+- [ ] Firebase: **Enable Cloud Storage** and publish `storage.rules` (required for return photos)
+- [ ] Firebase CLI: `firebase deploy --only firestore:rules,firestore:indexes,storage`
 - [ ] App: Sign up, then set your `role` to `"admin"` in Firestore
 - [ ] Vercel: Import repo, add all `VITE_FIREBASE_*` env vars, deploy
 - [ ] Firebase: Add Vercel domain to Authorized Domains
 - [ ] App: Sign in as admin → Settings → Seed Data → Load Starter Data
+- [ ] App: Sign in as a student → borrow equipment → confirm the **Return** button and photo upload work

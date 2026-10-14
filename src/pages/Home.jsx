@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Package, CheckSquare, Archive, Clock, AlertTriangle,
   FileText, ClipboardList, BookOpen, MessageCircle,
-  ChevronRight, Calendar, Megaphone, CheckCircle,
+  ChevronRight, Calendar, Megaphone, CheckCircle, DoorOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../lib/firebase';
@@ -11,9 +11,10 @@ import {
   collection, query, where, onSnapshot, getDocs,
   orderBy, limit, getDoc, doc,
 } from 'firebase/firestore';
-import { getTodayManila, formatDate, isOverdue } from '../lib/helpers';
+import { getTodayManila, formatDate, formatTimeOfDay, formatTimestamp, isOverdue } from '../lib/helpers';
 import { StatusBadge } from '../components/StatusBadge';
 import { CardSkeleton } from '../components/LoadingSpinner';
+import WarningsPanel from '../components/WarningsPanel';
 import labPics2 from '../assets/lab-pics2.png';
 
 function SummaryCard({ label, value, icon: Icon, color, loading }) {
@@ -70,6 +71,9 @@ export default function Home() {
   const today = getTodayManila();
   const [stats, setStats] = useState({});
   const [recentRequests, setRecentRequests] = useState([]);
+  const [recentLabBookings, setRecentLabBookings] = useState([]);
+  const [todayLabBookings, setTodayLabBookings] = useState([]);
+  const [reviewQueue, setReviewQueue] = useState(0);
   const [todaySchedule, setTodaySchedule] = useState([]);
   const [contact, setContact] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -113,7 +117,7 @@ export default function Home() {
         let borrowedCount = 0, overdueCount = 0;
         if (isAdmin) {
           const borrowedSnap = await getDocs(
-            query(collection(db, 'requests'), where('status', 'in', ['borrowed', 'approved']))
+            query(collection(db, 'requests'), where('status', 'in', ['borrowed', 'approved', 'return_submitted', 'return_flagged']))
           );
           borrowedSnap.forEach(d => {
             const r = d.data();
@@ -125,19 +129,53 @@ export default function Home() {
         // Today's schedule
         let schedDocs = [];
         if (isAdmin) {
-          const schedQ = query(collection(db, 'requests'), where('experimentDate', '==', today), where('status', 'in', ['approved', 'borrowed']));
+          const schedQ = query(collection(db, 'requests'), where('experimentDate', '==', today), where('status', 'in', ['approved', 'borrowed', 'return_submitted', 'return_flagged']));
           const schedSnap = await getDocs(schedQ);
           schedDocs = schedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
         } else {
           const schedQ = query(collection(db, 'requests'), where('userId', '==', userProfile.uid));
           const snap = await getDocs(schedQ);
-          schedDocs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.experimentDate === today && ['approved', 'borrowed'].includes(r.status));
+          schedDocs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.experimentDate === today && ['approved', 'borrowed', 'return_submitted', 'return_flagged'].includes(r.status));
         }
         setTodaySchedule(schedDocs);
 
         // Contact
         const contactSnap = await getDoc(doc(db, 'settings', 'contact'));
         if (contactSnap.exists()) setContact(contactSnap.data());
+
+        // Laboratory bookings
+        let labDocs = [];
+        if (isAdmin) {
+          const labSnap = await getDocs(
+            query(collection(db, 'labBookings'), orderBy('bookingDate', 'desc'), limit(6))
+          );
+          labDocs = labSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } else {
+          const labSnap = await getDocs(
+            query(collection(db, 'labBookings'), where('userId', '==', userProfile.uid))
+          );
+          labDocs = labSnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => (b.submittedAt?.seconds || 0) - (a.submittedAt?.seconds || 0))
+            .slice(0, 6);
+        }
+        setRecentLabBookings(labDocs);
+
+        let labToday = [];
+        if (isAdmin) {
+          const snap = await getDocs(
+            query(collection(db, 'labBookings'), where('bookingDate', '==', today))
+          );
+          labToday = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } else {
+          const snap = await getDocs(
+            query(collection(db, 'labBookings'), where('userId', '==', userProfile.uid))
+          );
+          labToday = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(b => b.bookingDate === today && ['approved', 'completed'].includes(b.status));
+        }
+        setTodayLabBookings(labToday);
 
         setStats({
           totalQty,
@@ -157,9 +195,13 @@ export default function Home() {
     let unsub = () => {};
     if (isAdmin) {
       const reqQ = query(collection(db, 'requests'), orderBy('requestDate', 'desc'), limit(8));
+      const proofQ = query(collection(db, 'requests'), where('status', '==', 'return_submitted'));
       unsub = onSnapshot(reqQ, (snap) => {
         setRecentRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       }, (err) => console.error("Admin onSnapshot error:", err));
+      const unsub2 = onSnapshot(proofQ, (snap) => setReviewQueue(snap.size), () => {});
+      const prev = unsub;
+      unsub = () => { prev(); unsub2(); };
     } else {
       const reqQ = query(collection(db, 'requests'), where('userId', '==', userProfile.uid));
       unsub = onSnapshot(reqQ, (snap) => {
@@ -213,6 +255,31 @@ export default function Home() {
           : summaryCards.map(c => <SummaryCard key={c.label} {...c} />)
         }
       </div>
+
+      {/* Action required: return proofs waiting on the laboratory */}
+      {isAdmin && reviewQueue > 0 && (
+        <Link
+          to="/admin/borrowing"
+          className="flex items-start gap-3 p-4 rounded-2xl bg-sky-50 border-2 border-sky-200 hover:border-sky-400 transition-colors"
+        >
+          <div className="p-2.5 rounded-xl bg-sky-100 text-sky-600 shrink-0">
+            <AlertTriangle size={20} strokeWidth={1.8} />
+          </div>
+          <div className="flex-1">
+            <p className="font-semibold text-sky-900">
+              {reviewQueue} return proof{reviewQueue === 1 ? '' : 's'} awaiting your assessment
+            </p>
+            <p className="text-sm text-sky-800">
+              Students have submitted photos of their returned equipment. Review each one to approve the
+              return or flag damage.
+            </p>
+          </div>
+          <ChevronRight size={18} className="text-sky-500 shrink-0 mt-1" />
+        </Link>
+      )}
+
+      {/* Warnings on the student's account */}
+      {!isAdmin && <WarningsPanel userId={userProfile?.uid} header="Warnings on My Account" />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Requests */}
@@ -277,11 +344,41 @@ export default function Home() {
             </div>
             <div className="grid grid-cols-2 gap-2 p-3">
               <QuickAccessCard to="/inventory" icon={Package} title="View Inventory" desc="Check available equipment and quantities" />
-              <QuickAccessCard to="/request" icon={ClipboardList} title="Submit Request" desc="Request laboratory equipment" />
-              <QuickAccessCard to="/my-requests" icon={FileText} title="My Requests" desc="Track your requests and status" />
+              <QuickAccessCard to={isAdmin ? '/admin/requests' : '/request'} icon={ClipboardList} title="Equipment Request" desc="Request laboratory equipment" />
+              <QuickAccessCard to={isAdmin ? '/admin/lab-bookings' : '/lab-booking'} icon={DoorOpen} title="Book Laboratory" desc="Reserve Room 103 or Room 301" />
+              <QuickAccessCard to={isAdmin ? '/admin/warnings' : '/my-requests'} icon={isAdmin ? AlertTriangle : FileText} title={isAdmin ? 'Issue Warning' : 'My Requests'} desc={isAdmin ? 'Record a warning on an account' : 'Track your requests and returns'} />
+              <QuickAccessCard to={isAdmin ? '/admin/borrowing' : '/my-lab-bookings'} icon={Calendar} title={isAdmin ? 'Borrowing & Returns' : 'My Lab Bookings'} desc={isAdmin ? 'Approve and check returns' : 'Track your room reservations'} />
               <QuickAccessCard to="/rules" icon={BookOpen} title="Rules & Penalties" desc="View laboratory rules and consequences" />
             </div>
           </div>
+
+          {todayLabBookings.length > 0 && (
+            <div className="card">
+              <div className="card-header">
+                <DoorOpen size={18} strokeWidth={1.8} />
+                Laboratory Rooms Today
+              </div>
+              <div className="p-3 space-y-2">
+                {todayLabBookings.map(b => (
+                  <div
+                    key={b.id}
+                    className="flex items-center gap-2 p-2.5 bg-primary-50 border border-primary-100 rounded-xl"
+                  >
+                    <DoorOpen size={14} className="text-crimson shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-ink truncate">
+                        {b.labRoom}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {formatTimeOfDay(b.startTime)}–{formatTimeOfDay(b.endTime)} ·{' '}
+                        {isAdmin ? b.studentName : b.purpose}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Today's Schedule */}
           <div className="card">
@@ -315,7 +412,65 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Bottom row */}
+      {/* Recent Laboratory Bookings */}
+        <div className="card">
+          <div className="card-header">
+            <DoorOpen size={18} strokeWidth={1.8} />
+            Recent Lab Bookings
+            <Link
+              to={isAdmin ? '/admin/lab-bookings' : '/my-lab-bookings'}
+              className="ml-auto text-xs text-gold hover:text-white flex items-center gap-1 font-medium"
+            >
+              View All <ChevronRight size={14} />
+            </Link>
+          </div>
+          {loading ? (
+            <div className="p-4 space-y-2">
+              {[1, 2].map(i => <div key={i} className="skeleton h-10 rounded" />)}
+            </div>
+          ) : recentLabBookings.length === 0 ? (
+            <div className="py-12 text-center text-gray-400">
+              <DoorOpen size={32} className="mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No laboratory bookings yet.</p>
+              <Link to={isAdmin ? '/admin/lab-bookings' : '/lab-booking'} className="btn-primary btn-sm mt-3 inline-flex">
+                {isAdmin ? 'Go to Lab Bookings' : 'Book a Laboratory'}
+              </Link>
+            </div>
+          ) : (
+            <div className="table-container">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Laboratory</th>
+                    <th>Date &amp; Time</th>
+                    {isAdmin && <th>Student</th>}
+                    <th>Sent</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentLabBookings.map(b => (
+                    <tr key={b.id}>
+                      <td data-label="Laboratory">
+                        <p className="font-medium text-sm">{b.labRoom}</p>
+                        <p className="text-xs text-gray-400 line-clamp-1 max-w-[160px]">{b.purpose}</p>
+                      </td>
+                      <td data-label="Date & Time" className="text-sm">
+                        {formatDate(b.bookingDate)}
+                        <p className="text-xs text-gray-400">
+                          {formatTimeOfDay(b.startTime)}–{formatTimeOfDay(b.endTime)}
+                        </p>
+                      </td>
+                      {isAdmin && <td data-label="Student" className="text-sm">{b.studentName}</td>}
+                      <td data-label="Sent" className="text-sm">{formatTimestamp(b.submittedAt || b.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Bottom row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Important Reminders */}
         <div className="card">

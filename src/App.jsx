@@ -14,12 +14,16 @@ import MyRequests from './pages/MyRequests';
 import RequestDetails from './pages/RequestDetails';
 import RulesPenalties from './pages/RulesPenalties';
 import About from './pages/About';
+import LabBooking from './pages/LabBooking';
+import MyLabBookings from './pages/MyLabBookings';
 
 // Admin pages
 import ManageRequests from './pages/admin/ManageRequests';
 import BorrowingReturns from './pages/admin/BorrowingReturns';
 import PenaltiesViolations from './pages/admin/PenaltiesViolations';
 import AdminSettings from './pages/admin/AdminSettings';
+import ManageLabBookings from './pages/admin/ManageLabBookings';
+import Warnings from './pages/admin/Warnings';
 
 // Guards
 import { RequireAuth, RequireAdmin } from './components/RouteGuards';
@@ -78,6 +82,8 @@ export default function App() {
               <Route path="/request" element={<RequestEquipment />} />
               <Route path="/my-requests" element={<MyRequests />} />
               <Route path="/requests/:id" element={<RequestDetails />} />
+              <Route path="/lab-booking" element={<LabBooking />} />
+              <Route path="/my-lab-bookings" element={<MyLabBookings />} />
               <Route path="/rules" element={<RulesPenalties />} />
               <Route path="/about" element={<About />} />
 
@@ -85,7 +91,9 @@ export default function App() {
               <Route element={<RequireAdmin />}>
                 <Route path="/admin/requests" element={<ManageRequests />} />
                 <Route path="/admin/borrowing" element={<BorrowingReturns />} />
+                <Route path="/admin/lab-bookings" element={<ManageLabBookings />} />
                 <Route path="/admin/penalties" element={<PenaltiesViolations />} />
+                <Route path="/admin/warnings" element={<Warnings />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
               </Route>
             </Route>

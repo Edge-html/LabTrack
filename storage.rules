@@ -1,0 +1,34 @@
+rules_version = '2';
+
+// Firebase Storage rules for LabTrack return-proof photos.
+// Deploy with:  firebase deploy --only storage
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admins are looked up from their Firestore user document.
+    function isAdmin() {
+      return isSignedIn() &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Return-proof photos: /returnProofs/{uid}/{requestId}/{fileName}
+    // Only the owning student may upload; the student and any admin may read.
+    match /returnProofs/{uid}/{allPaths=**} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid)
+        && request.resource != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Everything else is denied by default (no catch-all).
+  }
+}

@@ -65,8 +65,65 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid
         && resource.data.status == 'pending';
 
+      // Student: submit / re-submit return-proof photo on their own out-standing borrow.
+      // May only move borrowed -> return_submitted (or return_flagged -> return_submitted)
+      // and may only touch the return-proof fields.
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.status in ['borrowed', 'return_flagged']
+        && request.resource.data.status == 'return_submitted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'status',
+             'returnProof',
+             'returnSubmittedAt',
+             'returnSubmittedNote',
+             'proposedReturnDate',
+             'returnAttempt',
+             'updatedAt',
+           ]);
+
       // Admin: full read, update, delete
       allow update, delete: if isAdmin();
+    }
+
+    // ── labBookings (Wet / Dry Laboratory room booking) ─────────────────────
+    match /labBookings/{docId} {
+      // Student: create only for self, status "pending"
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      // Student: read only their own; admin reads all
+      allow read: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid || isAdmin());
+
+      // Student: delete only their own pending or rejected booking
+      allow delete: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.status in ['pending', 'rejected'];
+
+      // Student: cancel their own pending booking only (no other field changes)
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'status',
+             'cancelledAt',
+             'updatedAt',
+           ]);
+
+      // Admin: full read, update, delete
+      allow update, delete: if isAdmin();
+    }
+
+    // ── warnings (account warnings / records) ───────────────────────────────
+    match /warnings/{docId} {
+      // Admin: full access
+      allow read, write: if isAdmin();
+
+      // Student: read only their own warnings
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     // ── penalties ───────────────────────────────────────────────────────────

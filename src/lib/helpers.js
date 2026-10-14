@@ -69,11 +69,12 @@ export function durationToDays(duration) {
 
 /**
  * Determine if a request is overdue in the UI.
- * Overdue = (status is 'borrowed' or 'approved') AND expectedReturnDate < today.
+ * Overdue = equipment is still out (approved / borrowed / return_submitted /
+ * return_flagged) AND expectedReturnDate < today.
  */
 export function isOverdue(status, expectedReturnDate) {
   if (!expectedReturnDate) return false;
-  if (status !== 'borrowed' && status !== 'approved') return false;
+  if (!['borrowed', 'approved', 'return_submitted', 'return_flagged'].includes(status)) return false;
   const today = getTodayManila();
   return expectedReturnDate < today;
 }
@@ -134,6 +135,139 @@ export const STATUS_LABELS = {
   approved: 'Approved',
   rejected: 'Rejected',
   borrowed: 'Borrowed',
+  return_submitted: 'Awaiting Check',
+  return_flagged: 'Action Required',
   returned: 'Returned',
   overdue: 'Overdue',
 };
+
+/* ── Timestamps ───────────────────────────────────────────────────────────
+ * Firestore stores serverTimestamp() values, which arrive as Timestamp
+ * objects. These helpers normalise Timestamp | Date | ISO string | epoch ms.
+ */
+
+/**
+ * Convert a Firestore Timestamp / Date / ISO string / epoch ms into a Date,
+ * or null when the value is missing or unparseable.
+ */
+export function toDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+  if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Format a timestamp for display, e.g. "Oct 14, 2026, 3:24 PM".
+ * Pass withSeconds for audit-trail precision.
+ */
+export function formatTimestamp(value, { withSeconds = false } = {}) {
+  const d = toDate(value);
+  if (!d) return '—';
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+    hour12: true,
+  });
+}
+
+/**
+ * Format only the clock portion of a timestamp, e.g. "3:24 PM".
+ */
+export function formatTime(value, { withSeconds = false } = {}) {
+  const d = toDate(value);
+  if (!d) return '—';
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+    hour12: true,
+  });
+}
+
+/**
+ * Relative time from now, e.g. "5 min ago" / "in 2 hr".
+ */
+export function timeAgo(value) {
+  const d = toDate(value);
+  if (!d) return '—';
+  const diffMs = d.getTime() - Date.now();
+  const abs = Math.abs(diffMs);
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  const units = [
+    ['year', 31536000000],
+    ['month', 2592000000],
+    ['day', 86400000],
+    ['hour', 3600000],
+    ['minute', 60000],
+  ];
+  for (const [unit, ms] of units) {
+    if (abs >= ms) return rtf.format(Math.round(diffMs / ms), unit);
+  }
+  return 'just now';
+}
+
+/* ── Laboratory rooms ─────────────────────────────────────────────────── */
+
+export const LAB_ROOMS = [
+  { id: 'Room 103' },
+  { id: 'Room 301' },
+];
+
+export const LAB_ROOM_IDS = LAB_ROOMS.map((r) => r.id);
+
+/**
+ * Look up a room definition by its stored id.
+ */
+export function getLabRoom(id) {
+  return LAB_ROOMS.find((r) => r.id === id) || null;
+}
+
+/**
+ * Format a 24-hour "HH:MM" time string to a friendly "7:30 AM" label.
+ */
+export function formatTimeOfDay(timeStr) {
+  if (!timeStr) return '—';
+  const [h, m] = String(timeStr).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return timeStr;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+/**
+ * Do two half-open time ranges [aStart, aEnd) and [bStart, bEnd) overlap?
+ * Used to detect laboratory room slot conflicts.
+ */
+export function timesOverlap(aStart, aEnd, bStart, bEnd) {
+  if (!aStart || !aEnd || !bStart || !bEnd) return false;
+  return aStart < bEnd && bStart < aEnd;
+}
+
+export const LAB_STATUS_LABELS = {
+  pending: 'Pending',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+/**
+ * Derived status for a lab booking: an approved booking that has ended but
+ * has not been signed back in by staff is treated as overdue.
+ */
+export function getLabDisplayStatus(booking) {
+  if (!booking) return '';
+  if (booking.status !== 'approved') return booking.status;
+  const today = getTodayManila();
+  if (booking.bookingDate && booking.bookingDate < today && !booking.returnedAt) {
+    return 'overdue';
+  }
+  return 'approved';
+}

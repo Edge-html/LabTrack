@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Package, ClipboardList, FileText, BookOpen, Info,
   Settings, Users, BarChart2, AlertTriangle, Bell, ChevronDown,
-  LogOut, Menu, X,
+  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import knchsLogo from '../assets/knchs-logo.png';
@@ -13,14 +13,20 @@ const studentNav = [
   { to: '/inventory', label: 'Equipment Inventory', icon: Package },
   { to: '/request', label: 'Request Equipment', icon: ClipboardList },
   { to: '/my-requests', label: 'My Requests', icon: FileText },
+  { to: '/lab-booking', label: 'Book Laboratory', icon: DoorOpen },
+  { to: '/my-lab-bookings', label: 'My Lab Bookings', icon: CalendarRange },
   { to: '/rules', label: 'Rules & Penalties', icon: BookOpen },
   { to: '/about', label: 'About', icon: Info },
 ];
 
+const STUDENT_ONLY_PATHS = ['/request', '/my-requests', '/lab-booking', '/my-lab-bookings'];
+
 const adminNav = [
   { to: '/admin/requests', label: 'Manage Requests', icon: BarChart2 },
   { to: '/admin/borrowing', label: 'Borrowing & Returns', icon: ClipboardList },
+  { to: '/admin/lab-bookings', label: 'Lab Bookings', icon: DoorOpen },
   { to: '/admin/penalties', label: 'Penalties & Violations', icon: AlertTriangle },
+  { to: '/admin/warnings', label: 'Account Warnings', icon: AlertOctagon },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -101,7 +107,8 @@ export function Sidebar({ mobileOpen, onClose }) {
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {studentNav
           .filter(item => {
-            if (isAdmin && (item.to === '/request' || item.to === '/my-requests')) {
+            // Admins manage bookings from the admin section instead.
+            if (isAdmin && STUDENT_ONLY_PATHS.includes(item.to)) {
               return false;
             }
             return true;
@@ -196,16 +203,19 @@ export function Header({ onMenuClick, notifCount }) {
 
       <div className="ml-auto flex items-center gap-3">
         {/* Notification bell */}
-        <div className="relative">
-          <button className="p-2 rounded-xl hover:bg-white/10 transition-colors relative text-cream hover:text-white" aria-label="Notifications">
-            <Bell size={18} strokeWidth={1.8} />
-            {notifCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-flame text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-sm">
-                {notifCount > 9 ? '9+' : notifCount}
-              </span>
-            )}
-          </button>
-        </div>
+        <Link
+          to={isAdmin ? '/admin/borrowing' : '/my-requests'}
+          className="relative p-2 rounded-xl hover:bg-white/10 transition-colors text-cream hover:text-white"
+          aria-label="Notifications"
+          title={isAdmin ? 'Items awaiting your review' : 'Items needing your attention'}
+        >
+          <Bell size={18} strokeWidth={1.8} />
+          {notifCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 bg-flame text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-sm">
+              {notifCount > 9 ? '9+' : notifCount}
+            </span>
+          )}
+        </Link>
 
         {/* User menu */}
         <div className="relative">
