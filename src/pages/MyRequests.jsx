@@ -15,6 +15,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/LoadingSpinner';
 import ReturnProofModal from '../components/ReturnProofModal';
 import WarningsPanel from '../components/WarningsPanel';
+import { proofSrc } from '../lib/upload';
 
 const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'return_submitted', 'return_flagged', 'returned'];
 
@@ -188,9 +189,9 @@ export default function MyRequests() {
                     </td>
                     <td data-label="Status">
                       <StatusBadge status={r.status} expectedReturnDate={r.expectedReturnDate} />
-                      {r.returnProof?.url && (
+                      {proofSrc(r.returnProof) && (
                         <img
-                          src={r.returnProof.url}
+                          src={proofSrc(r.returnProof)}
                           alt="Return proof"
                           title="Return proof photo"
                           className="mt-1 w-8 h-8 object-cover rounded-lg border border-gray-200"

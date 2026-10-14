@@ -75,24 +75,32 @@ Output is in `dist/`.
 2. Paste the contents of `firestore.rules`
 3. Click **Publish**
 
-### 4. Cloud Storage (needed for return-proof photos)
-
-1. Go to **Firebase Console → Storage**
-2. Click **Get started** (same region as Firestore)
-3. Paste the contents of `storage.rules` into the Rules tab and **Publish**
-
-Without Storage enabled, students can still borrow equipment but the return-photo upload will fail.
-
-### 5. Firestore Indexes (CLI)
+### 4. Firestore Indexes (CLI)
 
 Some queries need composite indexes. Deploy them all at once with the Firebase CLI:
 
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase use --add          # select your project
-firebase deploy --only firestore:rules,firestore:indexes,storage
+firebase use --add                          # select your project
+firebase deploy --only firestore:rules,firestore:indexes
 ```
+
+> **Cloud Storage is NOT used.** This project runs on the Firebase **Spark** (free) plan,
+> which does not include Cloud Storage — only the Blaze plan does. Return-proof photos are
+> downscaled in the browser and stored as base64 data URLs directly on the request document
+> (see `src/lib/upload.js`). This keeps the project on the free tier.
+
+### Why photos live in Firestore
+
+| | Firestore (Spark) | Cloud Storage (Blaze only) |
+|---|---|---|
+| Free tier | 1 GiB, 50k reads/day | Not available |
+| Doc/file size cap | 1 MiB per document | 5 GB per file |
+| How we use it | Photo compressed to ≤ ~700 KB base64 | — |
+
+Client-side compression runs through four quality passes and stops as soon as the encoded
+image fits inside the Firestore document limit, so a typical photo lands around 100–250 KB.
 
 ---
 
@@ -161,7 +169,7 @@ requests/{id}
   staffRemarks, lateRequestFlag,
   createdAt,                                   ← request SENT time
   approvedAt, releasedAt, returnedAt,          ← lifecycle timestamps
-  returnProof: { url, path, fileName, contentType, size, uploadedAt, attempt },
+  returnProof: { dataUrl, contentType, size, width, height, capturedAt },
   returnSubmittedAt, returnSubmittedNote, proposedReturnDate, returnAttempt,
   returnReview: { verdict: clean|damaged|not_cleaned, remarks,
                   reviewedBy, reviewedByName, reviewedAt,
@@ -198,13 +206,11 @@ settings/penaltyRules → { rules: object[] }
 settings/contact     → { name, email, phone, location }
 ```
 
-### Firebase Storage
+### Return-proof photos
 
-```
-returnProofs/{uid}/{requestId}/{timestamp}-{filename}
-```
-
-Ownership-scoped: the owning student uploads, the student and any admin can read.
+Stored inline on `requests/{id}.returnProof.dataUrl` as a base64 data URL — no file storage
+service required. Access is governed by the `requests` rules: only the owning student can
+write a proof, and the owning student plus admins can read it.
 
 ---
 
@@ -254,7 +260,7 @@ This seeds:
 
 - **React 18** + **Vite 5** — frontend framework and build tool
 - **Tailwind CSS v3** — utility-first styling
-- **Firebase v10** — Auth + Firestore + Storage (Spark / free plan compatible)
+- **Firebase v10** — Auth + Firestore (Spark / free plan compatible)
 - **react-router-dom v6** — client-side routing
 - **lucide-react** — icon library
 - **papaparse** — CSV parsing for bulk import
@@ -266,8 +272,7 @@ This seeds:
 - [ ] Firebase: Enable Email/Password authentication
 - [ ] Firebase: Create Firestore database (production mode, asia-southeast1)
 - [ ] Firebase: Paste and publish `firestore.rules`
-- [ ] Firebase: **Enable Cloud Storage** and publish `storage.rules` (required for return photos)
-- [ ] Firebase CLI: `firebase deploy --only firestore:rules,firestore:indexes,storage`
+- [ ] Firebase CLI: `firebase deploy --only firestore:rules,firestore:indexes`
 - [ ] App: Sign up, then set your `role` to `"admin"` in Firestore
 - [ ] Vercel: Import repo, add all `VITE_FIREBASE_*` env vars, deploy
 - [ ] Firebase: Add Vercel domain to Authorized Domains

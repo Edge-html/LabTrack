@@ -16,6 +16,7 @@ import { PageLoader } from '../components/LoadingSpinner';
 import ReturnProofCard from '../components/ReturnProofCard';
 import ReturnProofModal from '../components/ReturnProofModal';
 import { WarningRow, useWarnings } from '../components/WarningsPanel';
+import { proofSrc } from '../lib/upload';
 
 export default function RequestDetails() {
   const { id } = useParams();
@@ -173,11 +174,11 @@ export default function RequestDetails() {
       </div>
 
       {/* Return proof */}
-      {(request.returnProof?.url || request.status === 'return_submitted') && (
+      {(proofSrc(request.returnProof) || request.status === 'return_submitted') && (
         <div className="card">
           <div className="card-header"><Camera size={18} strokeWidth={1.8} /> Return Proof</div>
           <div className="p-4">
-            {request.returnProof?.url ? (
+            {proofSrc(request.returnProof) ? (
               <ReturnProofCard request={request} size="lg" />
             ) : (
               <p className="text-sm text-gray-500 flex items-center gap-2">
@@ -299,7 +300,7 @@ export default function RequestDetails() {
           <Link to="/admin/requests" className="btn-secondary btn-sm">
             <ArrowLeft size={14} /> Back to Manage Requests
           </Link>
-          {(request.status === 'return_submitted' || request.returnProof?.url) && (
+          {(request.status === 'return_submitted' || proofSrc(request.returnProof)) && (
             <Link
               to={`/admin/borrowing?id=${request.id}&action=return`}
               className="btn-primary btn-sm"

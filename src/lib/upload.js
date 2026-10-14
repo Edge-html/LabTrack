@@ -1,43 +1,38 @@
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from './firebase';
+/**
+ * Return-proof image preparation.
+ *
+ * This project runs on the Firebase Spark (free) plan, which does NOT include
+ * Cloud Storage — only the Blaze plan does. So instead of uploading files to a
+ * bucket, photos are downscaled client-side and stored as a base64 data URL
+ * inside the request document.
+ *
+ * Firestore caps a document at 1 MiB, and base64 inflates binary data by ~33%,
+ * so we aggressively compress to stay well under that ceiling.
+ */
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // what we accept from the camera roll
+const FIRESTORE_DOC_LIMIT = 1048576;       // 1 MiB hard limit
+const SAFE_PAYLOAD_BYTES = 700 * 1024;    // base64 budget, leaves headroom
+
+/** Compression attempts, smallest/lossiest last. */
+const PASSES = [
+  { maxEdge: 1400, quality: 0.75 },
+  { maxEdge: 1200, quality: 0.68 },
+  { maxEdge: 1000, quality: 0.6 },
+  { maxEdge: 800, quality: 0.55 },
+];
+
+export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 
 /**
- * Client-side image downscaling.
- *
- * Phone cameras produce 4–12 MB files, which is slow to upload and slow for
- * admins to open. We re-encode to JPEG at a bounded longest edge, which keeps
- * return-proof photos under ~300 KB in practice.
- *
- * Falls back to the original file if canvas encoding is unavailable.
+ * Validate a picked file before we spend time compressing it.
+ * @returns {string|null} an error message, or null when the file is fine.
  */
-export async function compressImage(file, { maxEdge = 1600, quality = 0.82 } = {}) {
-  try {
-    const bitmap = await loadBitmap(file);
-    const { width, height } = bitmap;
-    const scale = Math.min(1, maxEdge / Math.max(width, height));
-    const w = Math.max(1, Math.round(width * scale));
-    const h = Math.max(1, Math.round(height * scale));
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    if (bitmap.close) bitmap.close();
-
-    const blob = await new Promise((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', quality)
-    );
-
-    // Only use the compressed version if it is actually smaller.
-    if (!blob || blob.size >= file.size) return file;
-    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', {
-      type: 'image/jpeg',
-      lastModified: Date.now(),
-    });
-  } catch {
-    return file;
-  }
+export function validateImageFile(file) {
+  if (!file) return 'Please choose a photo.';
+  if (!file.type.startsWith('image/')) return 'Only image files are allowed.';
+  if (file.size > MAX_UPLOAD_BYTES) return 'Photo is too large. Maximum size is 10 MB.';
+  return null;
 }
 
 function loadBitmap(file) {
@@ -63,75 +58,95 @@ function loadViaImgElement(file) {
   });
 }
 
-export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB, matches storage.rules
-
-/**
- * Validate a picked file before we spend time compressing it.
- * @returns {string|null} an error message, or null when the file is fine.
- */
-export function validateImageFile(file) {
-  if (!file) return 'Please choose a photo.';
-  if (!file.type.startsWith('image/')) return 'Only image files are allowed.';
-  if (file.size > MAX_UPLOAD_BYTES) return 'Photo is too large. Maximum size is 10 MB.';
-  return null;
-}
-
-function safeFileName(name) {
-  return (name || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-60);
-}
-
-/**
- * Upload a return-proof photo to Firebase Storage.
- *
- * @param {object}   opts
- * @param {string}   opts.uid       Owner of the photo (the student).
- * @param {string}   opts.requestId Owning equipment request id.
- * @param {File}     opts.file      Already-validated image file.
- * @param {number}   [opts.attempt] Increment to bust the cache when re-uploading.
- * @param {Function} [opts.onProgress] Called with 0–100.
- * @returns {Promise<{ url: string, path: string }>}
- */
-export function uploadReturnProof({ uid, requestId, file, attempt = 0, onProgress }) {
-  if (!storage) {
-    return Promise.reject(new Error('File storage is not configured. Please contact the laboratory staff.'));
-  }
-  const path = `returnProofs/${uid}/${requestId}/${Date.now()}-${safeFileName(file.name)}`;
-  const storageRef = ref(storage, path);
-  const task = uploadBytesResumable(storageRef, file, {
-    contentType: file.type || 'image/jpeg',
-    cacheControl: `private,max-age=${60 * 60},immutable=${attempt > 0}`,
-  });
-
+function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
-    task.on(
-      'state_changed',
-      (snap) => {
-        const pct = snap.totalBytes > 0 ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
-        onProgress?.(pct);
-      },
-      reject,
-      async () => {
-        try {
-          const url = await getDownloadURL(task.snapshot.ref);
-          resolve({ url, path });
-        } catch (err) {
-          reject(err);
-        }
-      }
-    );
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
   });
 }
 
+function renderJpeg(bitmap, maxEdge, quality) {
+  const width = bitmap.width || bitmap.naturalWidth;
+  const height = bitmap.height || bitmap.naturalHeight;
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  // Photos are often shot against a light bench; keep backgrounds honest.
+  ctx.drawImage(bitmap, 0, 0, w, h);
+
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+}
+
 /**
- * Best-effort delete of an uploaded proof, used when a student replaces a
- * photo the admin had already flagged. Failures are non-fatal.
+ * Downscale, re-encode to JPEG, and return a base64 data URL that fits inside
+ * a Firestore document.
+ *
+ * @param {File} file
+ * @param {(0-100:number)=>void} [onProgress]
+ * @returns {Promise<{ dataUrl: string, size: number, contentType: string, width: number, height: number }>}
  */
-export async function deleteReturnProof(path) {
-  if (!storage || !path) return;
+export async function prepareReturnProofImage(file, onProgress) {
+  let bitmap;
   try {
-    await deleteObject(ref(storage, path));
+    bitmap = await loadBitmap(file);
   } catch {
-    /* ignore — orphaned files are harmless, never block the student's flow */
+    // Could not decode (e.g. an unsupported format) — fall back to the original.
+    return fromFile(file);
   }
+
+  const totalPasses = PASSES.length;
+  for (let i = 0; i < totalPasses; i++) {
+    const { maxEdge, quality } = PASSES[i];
+    onProgress?.(Math.round(((i + 1) / totalPasses) * 100));
+
+    const blob = await renderJpeg(bitmap, maxEdge, quality);
+    if (!blob) continue;
+
+    // Base64 expands bytes by 4/3 — compare against the real budget.
+    const estimatedBase64 = Math.ceil(blob.size / 3) * 4;
+    if (estimatedBase64 > SAFE_PAYLOAD_BYTES && i < totalPasses - 1) continue;
+
+    const srcW = bitmap.width || bitmap.naturalWidth;
+    const srcH = bitmap.height || bitmap.naturalHeight;
+    const scale = Math.min(1, maxEdge / Math.max(srcW, srcH));
+
+    const dataUrl = await blobToDataUrl(blob);
+
+    if (bitmap.close) bitmap.close();
+    return {
+      dataUrl,
+      size: blob.size,
+      contentType: 'image/jpeg',
+      width: Math.round(srcW * scale),
+      height: Math.round(srcH * scale),
+    };
+  }
+
+  if (bitmap.close) bitmap.close();
+  throw new Error(
+    'This photo is too detailed to process. Please retake it closer to the equipment.'
+  );
+}
+
+async function fromFile(file) {
+  const dataUrl = await blobToDataUrl(file);
+  if (dataUrl.length > FIRESTORE_DOC_LIMIT) {
+    throw new Error('This photo is too large to store. Please use a smaller or lower-resolution photo.');
+  }
+  return { dataUrl, size: file.size, contentType: file.type || 'image/jpeg', width: 0, height: 0 };
+}
+
+/**
+ * Render source for a stored return proof, or null when there isn't one.
+ * @param {{dataUrl?: string}} proof
+ */
+export function proofSrc(proof) {
+  return proof?.dataUrl || null;
 }

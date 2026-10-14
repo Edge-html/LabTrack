@@ -3,10 +3,9 @@ import { Camera, Upload, ShieldCheck, Loader2 } from 'lucide-react';
 import PhotoUpload from './PhotoUpload';
 import { db } from '../lib/firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { compressImage, uploadReturnProof, deleteReturnProof } from '../lib/upload';
+import { prepareReturnProofImage, validateImageFile } from '../lib/upload';
 import { getTodayManila, formatDate } from '../lib/helpers';
 import { useToast } from '../context/ToastContext';
-import { useAuth } from '../context/AuthContext';
 
 /**
  * Student-facing modal for submitting photographic proof of an equipment return.
@@ -17,7 +16,6 @@ import { useAuth } from '../context/AuthContext';
  */
 export default function ReturnProofModal({ request, onClose, onDone }) {
   const toast = useToast();
-  const { userProfile } = useAuth();
 
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -51,26 +49,18 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
     setError('');
     setProgress(0);
 
-    let uploaded = null;
     try {
-      const compressed = await compressImage(file);
-      uploaded = await uploadReturnProof({
-        uid: userProfile.uid,
-        requestId: request.id,
-        file: compressed,
-        attempt: attempt + 1,
-        onProgress: setProgress,
-      });
+      const prepared = await prepareReturnProofImage(file, setProgress);
 
       await updateDoc(doc(db, 'requests', request.id), {
         status: 'return_submitted',
         returnProof: {
-          url: uploaded.url,
-          path: uploaded.path,
-          fileName: compressed.name,
-          contentType: compressed.type || 'image/jpeg',
-          size: compressed.size,
-          uploadedAt: serverTimestamp(),
+          dataUrl: prepared.dataUrl,
+          contentType: prepared.contentType,
+          size: prepared.size,
+          width: prepared.width,
+          height: prepared.height,
+          capturedAt: serverTimestamp(),
         },
         returnSubmittedAt: serverTimestamp(),
         returnSubmittedNote: note.trim(),
@@ -79,16 +69,10 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
         updatedAt: serverTimestamp(),
       });
 
-      // Best-effort cleanup of the rejected photo the student replaced.
-      if (isResubmit && request.returnProof?.path && request.returnProof.path !== uploaded.path) {
-        deleteReturnProof(request.returnProof.path);
-      }
-
       toast.success('Return proof submitted. The laboratory staff will check your photo.');
       onDone?.();
     } catch (err) {
-      if (uploaded) deleteReturnProof(uploaded.path);
-      setError(err.message || 'Upload failed. Please try again.');
+      setError(err.message || 'Could not process the photo. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -189,7 +173,9 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
                 />
               </div>
               <p className="text-xs text-gray-500 text-center">
-                {progress > 0 ? `Uploading photo… ${progress}%` : 'Preparing photo…'}
+                {progress > 0 && progress < 100
+                  ? `Optimising photo… ${progress}%`
+                  : 'Saving photo…'}
               </p>
             </div>
           )}
@@ -201,7 +187,7 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
             <button type="submit" disabled={busy} className="btn-primary btn-sm">
               {busy ? (
                 <>
-                  <Loader2 size={14} className="animate-spin" /> Uploading…
+                  <Loader2 size={14} className="animate-spin" /> Processing…
                 </>
               ) : (
                 <>

@@ -14,6 +14,7 @@ import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/
 import { StatusBadge, ConditionBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import ReturnProofCard from '../../components/ReturnProofCard';
+import { proofSrc } from '../../lib/upload';
 
 const ACTIVE_STATUSES = ['approved', 'borrowed', 'return_submitted', 'return_flagged'];
 
@@ -685,13 +686,13 @@ export default function BorrowingReturns() {
                       )}
                     </td>
                     <td data-label="Proof">
-                      {r.returnProof?.url ? (
+                      {proofSrc(r.returnProof) ? (
                         <button
                           onClick={() => setReviewTarget(r)}
                           className="flex items-center gap-1.5 text-xs font-medium text-crimson hover:text-gold"
                         >
                           <img
-                            src={r.returnProof.url}
+                            src={proofSrc(r.returnProof)}
                             alt="Return proof"
                             className="w-9 h-9 object-cover rounded-lg border border-gray-200"
                           />

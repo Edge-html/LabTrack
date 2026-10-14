@@ -3,6 +3,7 @@ import {
   Camera, Clock3, CheckCircle2, XCircle, AlertTriangle, Maximize2, MessageSquare, X,
 } from 'lucide-react';
 import { formatTimestamp, timeAgo } from '../lib/helpers';
+import { proofSrc } from '../lib/upload';
 
 /**
  * Renders a student's return-proof photo together with the time it was
@@ -15,8 +16,9 @@ export default function ReturnProofCard({ request, size = 'md' }) {
   const [lightbox, setLightbox] = useState(false);
   const proof = request?.returnProof;
   const review = request?.returnReview;
+  const src = proofSrc(proof);
 
-  if (!proof?.url) return null;
+  if (!src) return null;
 
   const imgH = size === 'sm' ? 'max-h-40' : size === 'lg' ? 'max-h-[420px]' : 'max-h-64';
 
@@ -26,10 +28,9 @@ export default function ReturnProofCard({ request, size = 'md' }) {
         {/* Photo */}
         <div className={`relative ${imgH} overflow-hidden rounded-xl border border-gray-200 bg-gray-50 group`}>
           <img
-            src={proof.url}
+            src={src}
             alt="Return proof submitted by student"
             className={`w-full ${imgH} object-contain`}
-            loading="lazy"
           />
           <button
             type="button"
@@ -39,9 +40,9 @@ export default function ReturnProofCard({ request, size = 'md' }) {
           >
             <Maximize2 size={15} />
           </button>
-          {proof.attempt > 1 && (
-            <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded">
-              Re-submission #{proof.attempt}
+          {request.returnAttempt > 1 && (
+            <span className="absolute bottom-2 left-1 px-2 py-0.5 bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded">
+              Re-submission #{request.returnAttempt}
             </span>
           )}
         </div>
@@ -53,9 +54,9 @@ export default function ReturnProofCard({ request, size = 'md' }) {
             Return proof sent {formatTimestamp(request.returnSubmittedAt)}
           </span>
           <span className="text-gray-400">({timeAgo(request.returnSubmittedAt)})</span>
-          {proof.uploadedAt && request.returnSubmittedAt && (
+          {proof.width > 0 && (
             <span className="text-gray-400">
-              photo uploaded {formatTimestamp(proof.uploadedAt)}
+              {proof.width}×{proof.height} · {Math.round((proof.size || 0) / 1024)} KB
             </span>
           )}
         </div>
@@ -84,7 +85,7 @@ export default function ReturnProofCard({ request, size = 'md' }) {
             <X size={20} />
           </button>
           <img
-            src={proof.url}
+            src={src}
             alt="Return proof (full size)"
             className="max-h-full max-w-full object-contain rounded-lg"
           />
