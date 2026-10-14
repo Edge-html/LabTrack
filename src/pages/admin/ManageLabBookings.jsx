@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
-  collection, query, getDocs, updateDoc, doc, serverTimestamp, limit, getDoc,
+  collection, query, where, getDocs, updateDoc, doc, serverTimestamp, limit, getDoc,
 } from 'firebase/firestore';
 import {
   formatDate, formatTimeOfDay, formatTimestamp, timeAgo,

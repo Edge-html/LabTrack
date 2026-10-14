@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  DoorOpen, Search, Trash2, ArrowLeft, Info,
+  DoorOpen, Search, Trash2, ArrowLeft, Info, Calendar,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';

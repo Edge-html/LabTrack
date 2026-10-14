@@ -48,21 +48,6 @@
         { "fieldPath": "userId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "penalties",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "requestId", "order": "ASCENDING" },
-        { "fieldPath": "__name__", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "warnings",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "issuedAt", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
