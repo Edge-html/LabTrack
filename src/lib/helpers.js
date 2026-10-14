@@ -242,6 +242,24 @@ export function formatTimeOfDay(timeStr) {
 }
 
 /**
+ * Human-readable length of a booking, e.g. "1 hr 30 min".
+ * Returns null when the range is missing or invalid.
+ */
+export function durationLabel(startTime, endTime) {
+  if (!startTime || !endTime || startTime >= endTime) return null;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  if ([sh, sm, eh, em].some(Number.isNaN)) return null;
+  const mins = eh * 60 + em - (sh * 60 + sm);
+  if (mins <= 0) return null;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h && m) return `${h} hr ${m} min`;
+  if (h) return `${h} hr`;
+  return `${m} min`;
+}
+
+/**
  * Do two half-open time ranges [aStart, aEnd) and [bStart, bEnd) overlap?
  * Used to detect laboratory room slot conflicts.
  */

@@ -11,14 +11,8 @@ import {
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, formatTimeOfDay, isValidGradeLevel,
-  LAB_ROOMS, getLabRoom, timesOverlap, countSchoolDays,
+  LAB_ROOMS, getLabRoom, timesOverlap, durationLabel, countSchoolDays,
 } from '../lib/helpers';
-
-/** Slots offered in the booking form. */
-const TIME_SLOTS = [
-  '07:30', '08:30', '09:30', '10:30', '11:30',
-  '12:30', '13:30', '14:30', '15:30', '16:30',
-];
 
 export default function LabBooking() {
   const { userProfile } = useAuth();
@@ -266,23 +260,24 @@ export default function LabBooking() {
             </div>
             <div>
               <label className="label">Start Time *</label>
-              <select className="input" value={form.startTime} onChange={e => setField('startTime', e.target.value)}>
-                {TIME_SLOTS.slice(0, -1).map(t => (
-                  <option key={t} value={t}>{formatTimeOfDay(t)}</option>
-                ))}
-              </select>
+              <input
+                type="time"
+                step="300"
+                className={`input ${errors.startTime ? 'input-error' : ''}`}
+                value={form.startTime}
+                onChange={e => setField('startTime', e.target.value)}
+              />
+              {errors.startTime && <p className="text-xs text-red-600 mt-1">{errors.startTime}</p>}
             </div>
             <div>
               <label className="label">End Time *</label>
-              <select
+              <input
+                type="time"
+                step="300"
                 className={`input ${errors.endTime ? 'input-error' : ''}`}
                 value={form.endTime}
                 onChange={e => setField('endTime', e.target.value)}
-              >
-                {TIME_SLOTS.slice(1).map(t => (
-                  <option key={t} value={t}>{formatTimeOfDay(t)}</option>
-                ))}
-              </select>
+              />
               {errors.endTime && <p className="text-xs text-red-600 mt-1">{errors.endTime}</p>}
             </div>
           </div>
@@ -322,7 +317,12 @@ export default function LabBooking() {
                   <p className="text-green-800">
                     <span className="font-semibold">{room?.id}</span> is available on{' '}
                     <span className="font-semibold">{formatDate(form.bookingDate)}</span>,{' '}
-                    {formatTimeOfDay(form.startTime)} – {formatTimeOfDay(form.endTime)}.
+                    {formatTimeOfDay(form.startTime)} – {formatTimeOfDay(form.endTime)}
+                    {durationLabel(form.startTime, form.endTime) && (
+                      <>
+                        {' '}(<span className="font-semibold">{durationLabel(form.startTime, form.endTime)}</span>)
+                      </>
+                    )}.
                   </p>
                 )}
               </div>
