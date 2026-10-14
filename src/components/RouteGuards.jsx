@@ -27,12 +27,13 @@ export function RequireAdmin() {
 function AppShell() {
   const { userProfile, isAdmin } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [notifCount, setNotifCount] = useState(0);
+  const [notifCounts, setNotifCounts] = useState({});
 
   useEffect(() => {
     if (!userProfile || !db) return;
 
-    // Each stream contributes its own count; the badge shows their sum.
+    // Each stream contributes its own count. The header bell shows their sum;
+    // the sidebar shows the individual counts against each admin section.
     const sources = isAdmin
       ? [
           ['pendingRequests', query(collection(db, 'requests'), where('status', '==', 'pending'))],
@@ -45,26 +46,24 @@ function AppShell() {
           ['labAction', query(collection(db, 'labBookings'), where('userId', '==', userProfile.uid), where('status', 'in', ['approved', 'cancelled']))],
         ];
 
-    const counts = {};
-    sources.forEach(([key]) => { counts[key] = 0; });
-
-    const update = () => {
-      setNotifCount(Object.values(counts).reduce((a, b) => a + b, 0));
-    };
-
     const unsubs = sources.map(([key, q]) =>
       onSnapshot(q, (snap) => {
-        counts[key] = snap.size;
-        update();
+        setNotifCounts(prev => (prev[key] === snap.size ? prev : { ...prev, [key]: snap.size }));
       }, () => {})
     );
 
     return () => unsubs.forEach(u => u());
   }, [userProfile, isAdmin]);
 
+  const notifCount = Object.values(notifCounts).reduce((a, b) => a + b, 0);
+
   return (
     <div className="relative flex h-screen overflow-hidden">
-      <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <Sidebar
+        mobileOpen={mobileOpen}
+        onClose={() => setMobileOpen(false)}
+        notifCounts={notifCounts}
+      />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10">
         <Header onMenuClick={() => setMobileOpen(true)} notifCount={notifCount} />
         <main

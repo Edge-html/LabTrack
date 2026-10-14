@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Package, ClipboardList, FileText, BookOpen, Info,
   Settings, Users, BarChart2, AlertTriangle, Bell, ChevronDown,
-  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon,
+  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import knchsLogo from '../assets/knchs-logo.png';
@@ -14,17 +14,18 @@ const studentNav = [
   { to: '/request', label: 'Request Equipment', icon: ClipboardList },
   { to: '/my-requests', label: 'My Requests', icon: FileText },
   { to: '/lab-booking', label: 'Book Laboratory', icon: DoorOpen },
-  { to: '/my-lab-bookings', label: 'My Lab Bookings', icon: CalendarRange },
+  { to: '/lab-schedule', label: 'Room Schedule', icon: CalendarDays, badgeKey: 'labAction' },
+  { to: '/my-lab-bookings', label: 'My Lab Bookings', icon: CalendarRange, badgeKey: 'labBookings' },
   { to: '/rules', label: 'Rules & Penalties', icon: BookOpen },
   { to: '/about', label: 'About', icon: Info },
 ];
 
-const STUDENT_ONLY_PATHS = ['/request', '/my-requests', '/lab-booking', '/my-lab-bookings'];
+const STUDENT_ONLY_PATHS = ['/request', '/my-requests', '/lab-booking', '/my-lab-bookings', '/lab-schedule'];
 
 const adminNav = [
-  { to: '/admin/requests', label: 'Manage Requests', icon: BarChart2 },
-  { to: '/admin/borrowing', label: 'Borrowing & Returns', icon: ClipboardList },
-  { to: '/admin/lab-bookings', label: 'Lab Bookings', icon: DoorOpen },
+  { to: '/admin/requests', label: 'Manage Requests', icon: BarChart2, badgeKey: 'pendingRequests' },
+  { to: '/admin/borrowing', label: 'Borrowing & Returns', icon: ClipboardList, badgeKey: 'returnProofs' },
+  { to: '/admin/lab-bookings', label: 'Lab Bookings', icon: DoorOpen, badgeKey: 'labBookings' },
   { to: '/admin/penalties', label: 'Penalties & Violations', icon: AlertTriangle },
   { to: '/admin/warnings', label: 'Account Warnings', icon: AlertOctagon },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
@@ -44,7 +45,7 @@ function MicroscopeSVG() {
   );
 }
 
-function NavLink({ to, label, icon: Icon, onClick }) {
+function NavLink({ to, label, icon: Icon, onClick, badge }) {
   const location = useLocation();
   const active = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
   return (
@@ -54,12 +55,20 @@ function NavLink({ to, label, icon: Icon, onClick }) {
       className={`sidebar-link ${active ? 'sidebar-link-active' : ''}`}
     >
       <Icon size={18} strokeWidth={1.8} className={active ? 'text-gold' : 'text-cream/80'} />
-      <span>{label}</span>
+      <span className="flex-1 min-w-0">{label}</span>
+      {badge > 0 && (
+        <span
+          className="ml-auto shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-flame text-white text-[10px] font-bold flex items-center justify-center shadow-sm ring-1 ring-white/20"
+          title={`${badge} new`}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </Link>
   );
 }
 
-export function Sidebar({ mobileOpen, onClose }) {
+export function Sidebar({ mobileOpen, onClose, notifCounts = {} }) {
   const { userProfile, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -114,7 +123,12 @@ export function Sidebar({ mobileOpen, onClose }) {
             return true;
           })
           .map(item => (
-            <NavLink key={item.to} {...item} onClick={onClose} />
+            <NavLink
+              key={item.to}
+              {...item}
+              badge={item.badgeKey ? notifCounts[item.badgeKey] : 0}
+              onClick={onClose}
+            />
           ))}
         {isAdmin && (
           <>
@@ -122,7 +136,12 @@ export function Sidebar({ mobileOpen, onClose }) {
               <span className="text-[10px] uppercase tracking-widest text-gold font-bold">Admin</span>
             </div>
             {adminNav.map(item => (
-              <NavLink key={item.to} {...item} onClick={onClose} />
+              <NavLink
+                key={item.to}
+                {...item}
+                badge={item.badgeKey ? notifCounts[item.badgeKey] : 0}
+                onClick={onClose}
+              />
             ))}
           </>
         )}

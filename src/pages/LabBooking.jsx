@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   DoorOpen, Info, AlertTriangle, Calendar, Clock, Loader2,
 } from 'lucide-react';
@@ -11,21 +11,28 @@ import {
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, formatTimeOfDay, isValidGradeLevel,
-  LAB_ROOMS, getLabRoom, timesOverlap, durationLabel, countSchoolDays,
+  LAB_ROOMS, LAB_ROOM_IDS, getLabRoom, timesOverlap, durationLabel, countSchoolDays,
 } from '../lib/helpers';
 
 export default function LabBooking() {
   const { userProfile } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const today = getTodayManila();
+
+  // Deep link from the room schedule: ?room=Room%20103&date=...&start=08:00&end=09:00
+  const preRoom = searchParams.get('room');
+  const preDate = searchParams.get('date');
+  const preStart = searchParams.get('start');
+  const preEnd = searchParams.get('end');
 
   const [form, setForm] = useState({
     studentId: '',
-    labRoom: LAB_ROOMS[0].id,
-    bookingDate: today,
-    startTime: '07:30',
-    endTime: '08:30',
+    labRoom: LAB_ROOM_IDS.includes(preRoom) ? preRoom : LAB_ROOMS[0].id,
+    bookingDate: preDate && preDate >= today ? preDate : today,
+    startTime: /^\d{2}:\d{2}$/.test(preStart || '') ? preStart : '07:30',
+    endTime: /^\d{2}:\d{2}$/.test(preEnd || '') ? preEnd : '08:30',
     purpose: '',
     teacher: '',
     participants: '1',

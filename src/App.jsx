@@ -16,6 +16,7 @@ import RulesPenalties from './pages/RulesPenalties';
 import About from './pages/About';
 import LabBooking from './pages/LabBooking';
 import MyLabBookings from './pages/MyLabBookings';
+import LabSchedule from './pages/LabSchedule';
 
 // Admin pages
 import ManageRequests from './pages/admin/ManageRequests';
@@ -84,6 +85,7 @@ export default function App() {
               <Route path="/requests/:id" element={<RequestDetails />} />
               <Route path="/lab-booking" element={<LabBooking />} />
               <Route path="/my-lab-bookings" element={<MyLabBookings />} />
+              <Route path="/lab-schedule" element={<LabSchedule />} />
               <Route path="/rules" element={<RulesPenalties />} />
               <Route path="/about" element={<About />} />
 
