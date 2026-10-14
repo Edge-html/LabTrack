@@ -260,45 +260,6 @@ export function toTimeString(mins) {
 }
 
 /**
- * Merge overlapping/adjacent time ranges into a sorted, non-overlapping list.
- * Each entry: { start, end, bookings: [] }
- */
-export function mergeTimeRanges(bookings) {
-  const ranges = bookings
-    .map(b => ({ start: minutesOfDay(b.startTime), end: minutesOfDay(b.endTime), booking: b }))
-    .filter(r => r.start !== null && r.end !== null && r.end > r.start)
-    .sort((a, b) => a.start - b.start);
-
-  const merged = [];
-  for (const r of ranges) {
-    const last = merged[merged.length - 1];
-    if (last && r.start <= last.end) {
-      last.end = Math.max(last.end, r.end);
-      last.bookings.push(r.booking);
-    } else {
-      merged.push({ start: r.start, end: r.end, bookings: [r.booking] });
-    }
-  }
-  return merged;
-}
-
-/**
- * Gaps of free time inside [dayStart, dayEnd) not covered by `ranges`.
- * Each entry: { start, end, minutes }
- */
-export function freeWindows(ranges, dayStart, dayEnd) {
-  const gaps = [];
-  let cursor = dayStart;
-  for (const r of ranges) {
-    if (r.start > cursor) gaps.push({ start: cursor, end: r.start, minutes: r.start - cursor });
-    cursor = Math.max(cursor, r.end);
-  }
-  if (cursor < dayEnd) gaps.push({ start: cursor, end: dayEnd, minutes: dayEnd - cursor });
-  // Ignore slivers that aren't worth booking.
-  return gaps.filter(g => g.minutes >= 15);
-}
-
-/**
  * Human-readable length of a booking, e.g. "1 hr 30 min".
  * Returns null when the range is missing or invalid.
  */
