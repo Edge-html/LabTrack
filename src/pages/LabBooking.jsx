@@ -314,7 +314,8 @@ export default function LabBooking() {
                     <ul className="mt-1 space-y-0.5">
                       {conflicts.map(c => (
                         <li key={c.id} className="text-red-700 text-xs">
-                          {formatTimeOfDay(c.startTime)}–{formatTimeOfDay(c.endTime)} · {c.studentName} ({c.status})
+                          {formatTimeOfDay(c.startTime)}–{formatTimeOfDay(c.endTime)}
+                          {c.status === 'pending' ? ' · pending request' : ' · booked'}
                         </li>
                       ))}
                     </ul>

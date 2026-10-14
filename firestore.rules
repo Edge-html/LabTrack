@@ -86,16 +86,24 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // ── labBookings (Wet / Dry Laboratory room booking) ─────────────────────
+    // ── labBookings (laboratory room booking) ─────────────────────────────
     match /labBookings/{docId} {
       // Student: create only for self, status "pending"
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'pending';
 
-      // Student: read only their own; admin reads all
-      allow read: if isSignedIn() &&
-        (resource.data.userId == request.auth.uid || isAdmin());
+      // Any signed-in user may READ room bookings.
+      //
+      // A shared room schedule cannot work under an owner-only read rule:
+      // Firestore rules are not filters, so a query like "every booking on
+      // this date" is denied outright unless every document in the result
+      // satisfies the rule. Availability and slot-conflict checks both need
+      // to see other students' bookings.
+      //
+      // Writes stay restricted: a student can only create, cancel or read
+      // their own record.
+      allow read: if isSignedIn();
 
       // Student: delete only their own pending or rejected booking
       allow delete: if isSignedIn()
