@@ -3,7 +3,12 @@ import { Camera, Upload, ShieldCheck, Loader2 } from 'lucide-react';
 import PhotoUpload from './PhotoUpload';
 import { db } from '../lib/firebase';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { prepareReturnProofImage, validateImageFile } from '../lib/upload';
+import {
+  prepareReturnProofImage,
+  proofPhotoBudget,
+  MAX_PROOF_PHOTOS,
+  FIRESTORE_PROOF_LIMIT,
+} from '../lib/upload';
 import { getTodayManila, formatDate } from '../lib/helpers';
 import { useToast } from '../context/ToastContext';
 
@@ -13,12 +18,15 @@ import { useToast } from '../context/ToastContext';
  * Submitting moves the request from `borrowed` / `return_flagged` to
  * `return_submitted`, which puts it in the admin's review queue. The request is
  * NOT marked returned here — only laboratory staff can do that.
+ *
+ * Students may attach several photos (e.g. one angle per item); they are
+ * compressed as a set so the whole proof still fits in one Firestore document.
  */
 export default function ReturnProofModal({ request, onClose, onDone }) {
   const toast = useToast();
 
-  const [file, setFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [previews, setPreviews] = useState([]);
   const [note, setNote] = useState('');
   const [returnDate, setReturnDate] = useState(getTodayManila());
   const [progress, setProgress] = useState(0);
@@ -29,19 +37,15 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
   const attempt = request.returnAttempt || 0;
 
   useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+    const urls = files.map(file => URL.createObjectURL(file));
+    setPreviews(urls);
+    return () => urls.forEach(url => URL.revokeObjectURL(url));
+  }, [files]);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!file) {
-      setError('A photo is required as proof of return.');
+    if (!files.length) {
+      setError('At least one photo is required as proof of return.');
       return;
     }
 
@@ -50,16 +54,37 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
     setProgress(0);
 
     try {
-      const prepared = await prepareReturnProofImage(file, setProgress);
+      // The whole set shares one budget, so more photos = less resolution each.
+      const budget = proofPhotoBudget(files.length);
+      const photos = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const prepared = await prepareReturnProofImage(
+          files[i],
+          pct => setProgress(Math.round(((i + pct / 100) / files.length) * 100)),
+          { maxBytes: budget },
+        );
+        photos.push({ ...prepared, name: files[i].name });
+      }
+
+      const payload = photos.reduce((sum, p) => sum + p.dataUrl.length, 0);
+      if (payload > FIRESTORE_PROOF_LIMIT) {
+        throw new Error('These photos are too large to store together. Please attach fewer or smaller photos.');
+      }
+
+      // `dataUrl` mirrors the first photo so older readers keep working.
+      const [first] = photos;
 
       await updateDoc(doc(db, 'requests', request.id), {
         status: 'return_submitted',
         returnProof: {
-          dataUrl: prepared.dataUrl,
-          contentType: prepared.contentType,
-          size: prepared.size,
-          width: prepared.width,
-          height: prepared.height,
+          dataUrl: first.dataUrl,
+          contentType: first.contentType,
+          size: first.size,
+          width: first.width,
+          height: first.height,
+          count: photos.length,
+          photos,
           capturedAt: serverTimestamp(),
         },
         returnSubmittedAt: serverTimestamp(),
@@ -69,10 +94,14 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
         updatedAt: serverTimestamp(),
       });
 
-      toast.success('Return proof submitted. The laboratory staff will check your photo.');
+      toast.success(
+        files.length > 1
+          ? `${files.length} proof photos submitted. The laboratory staff will check them.`
+          : 'Return proof submitted. The laboratory staff will check your photo.'
+      );
       onDone?.();
     } catch (err) {
-      setError(err.message || 'Could not process the photo. Please try again.');
+      setError(err.message || 'Could not process the photos. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -99,7 +128,7 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
                 {request.returnReview?.remarks || 'The equipment was assessed as damaged or not properly cleaned.'}
               </p>
               <p className="mt-1 font-medium">
-                Please clean and repair the equipment, then upload a new photo — or report directly to the laboratory.
+                Please clean and repair the equipment, then upload new photos — or report directly to the laboratory.
               </p>
             </div>
           </div>
@@ -118,13 +147,15 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Photo Proof *</label>
+            <label className="label">
+              Photo Proof * <span className="text-gray-400 font-normal">(up to {MAX_PROOF_PHOTOS} photos)</span>
+            </label>
             <PhotoUpload
-              file={file}
-              previewUrl={previewUrl}
-              onChange={f => { setFile(f); setError(''); }}
+              files={files}
+              previews={previews}
+              onChange={next => { setFiles(next || []); setError(''); }}
               disabled={busy}
-              hint="Take a clear photo of the cleaned equipment on the lab table"
+              hint="Take clear photos of the cleaned equipment on the lab table"
             />
           </div>
 
@@ -174,7 +205,7 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
               </div>
               <p className="text-xs text-gray-500 text-center">
                 {progress > 0 && progress < 100
-                  ? `Optimising photo… ${progress}%`
+                  ? `Optimising ${files.length > 1 ? `${files.length} photos` : 'photo'}… ${progress}%`
                   : 'Saving photo…'}
               </p>
             </div>

@@ -6,7 +6,9 @@ import {
   LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import knchsLogo from '../assets/knchs-logo.png';
+
+/** Main LabTrack mark, served from `public/images/`. */
+const LABTRACK_LOGO = '/images/labtrack_logo.png';
 
 const studentNav = [
   { to: '/', label: 'Home', icon: Home },
@@ -84,7 +86,7 @@ export function Sidebar({ mobileOpen, onClose, notifCounts = {} }) {
         className="absolute -right-12 top-[58%] -translate-y-1/2 pointer-events-none opacity-[0.08] select-none z-0"
         aria-hidden="true"
       >
-        <img src={knchsLogo} alt="" className="w-72 h-72 object-contain filter brightness-125" />
+        <img src={LABTRACK_LOGO} alt="" className="w-72 h-72 object-contain" />
       </div>
 
       {/* Logo */}
@@ -92,9 +94,9 @@ export function Sidebar({ mobileOpen, onClose, notifCounts = {} }) {
         <div className="relative group shrink-0">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[1px] opacity-60"></div>
           <img 
-            src={knchsLogo} 
-            alt="KNCHS Seal" 
-            className="relative w-9 h-9 rounded-full object-contain bg-white p-0.5 shadow-sm ring-2 ring-gold/60" 
+            src={LABTRACK_LOGO} 
+            alt="LabTrack logo" 
+            className="relative w-10 h-10 rounded-full object-contain bg-white p-0.5 shadow-sm ring-2 ring-gold/60" 
           />
         </div>
         <div className="min-w-0">
@@ -151,7 +153,7 @@ export function Sidebar({ mobileOpen, onClose, notifCounts = {} }) {
       <div className="px-5 py-4 border-t border-white/10">
         <div className="flex flex-col items-center gap-1.5 mb-3 text-gold">
           <p className="text-center text-[11px] text-cream/80 leading-snug">
-            Safe Equipment.<br />Better Experiments.<br />Brighter Futures.
+            Track It Right,<br />Keep Your Lab Bright
           </p>
           <p className="text-[10px] font-bold tracking-widest text-gold">— KNCHS —</p>
         </div>
@@ -210,7 +212,7 @@ export function Header({ onMenuClick, notifCount }) {
       <div className="flex items-center gap-2 lg:hidden">
         <div className="relative shrink-0">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[1px] opacity-50"></div>
-          <img src={knchsLogo} alt="KNCHS Logo" className="relative w-7 h-7 rounded-full object-contain bg-white p-px shadow-sm ring-1 ring-gold/60" />
+          <img src={LABTRACK_LOGO} alt="LabTrack logo" className="relative w-8 h-8 rounded-full object-contain bg-white p-px shadow-sm ring-1 ring-gold/60" />
         </div>
         <span className="font-bold text-lg text-white tracking-tight">Lab<span className="text-gold">Track</span></span>
       </div>

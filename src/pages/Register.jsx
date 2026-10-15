@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { GRADE_LEVELS, isValidGradeLevel } from '../lib/helpers';
-import knchsLogo from '../assets/knchs-logo.png';
 import labPics1 from '../assets/lab-pics1.png';
+
+const LABTRACK_LOGO = '/images/labtrack_logo.png';
 
 export default function Register() {
   const { register, parseFirebaseError } = useAuth();
@@ -72,9 +73,9 @@ export default function Register() {
           <div className="relative shrink-0">
             <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[1px] opacity-60"></div>
             <img
-              src={knchsLogo}
-              alt="KNCHS School Seal"
-              className="relative w-14 h-14 rounded-full object-contain bg-white p-0.5 shadow-md ring-2 ring-gold/70"
+              src={LABTRACK_LOGO}
+              alt="LabTrack logo"
+              className="relative w-16 h-16 rounded-full object-contain bg-white p-0.5 shadow-md ring-2 ring-gold/70"
               loading="lazy"
             />
           </div>

@@ -169,7 +169,9 @@ requests/{id}
   staffRemarks, lateRequestFlag,
   createdAt,                                   ← request SENT time
   approvedAt, releasedAt, returnedAt,          ← lifecycle timestamps
-  returnProof: { dataUrl, contentType, size, width, height, capturedAt },
+  returnProof: { dataUrl, contentType, size, width, height, capturedAt,
+                 count, photos[]: { dataUrl, contentType, size,
+                                    width, height, name } },
   returnSubmittedAt, returnSubmittedNote, proposedReturnDate, returnAttempt,
   returnReview: { verdict: clean|damaged|not_cleaned, remarks,
                   reviewedBy, reviewedByName, reviewedAt,
@@ -208,8 +210,14 @@ settings/contacts    → { list: [{ id, name, role, email, phone, location }] }
 
 ### Return-proof photos
 
-Stored inline on `requests/{id}.returnProof.dataUrl` as a base64 data URL — no file storage
-service required. Access is governed by the `requests` rules: only the owning student can
+A student may attach up to `MAX_PROOF_PHOTOS` (5) photos in one submission. They are stored
+inline on `requests/{id}.returnProof.photos[]` as base64 data URLs — no file storage service
+required. Because a whole proof has to fit in a single Firestore document, the set shares one
+~700 KB base64 budget (`proofPhotoBudget(count)` divides it per photo), so more photos simply
+means lower resolution each. The top-level `dataUrl` mirrors the first photo, and proofs saved
+before multi-photo support are read back as a single photo by `proofPhotos()`.
+
+Access is governed by the `requests` rules: only the owning student can
 write a proof, and the owning student plus admins can read it.
 
 ---

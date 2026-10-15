@@ -14,7 +14,8 @@ import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/
 import { StatusBadge, ConditionBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import ReturnProofCard from '../../components/ReturnProofCard';
-import { proofSrc } from '../../lib/upload';
+import ProofThumb from '../../components/ProofThumb';
+import { proofPhotos } from '../../lib/upload';
 
 const ACTIVE_STATUSES = ['approved', 'borrowed', 'return_submitted', 'return_flagged'];
 
@@ -239,7 +240,7 @@ function ReturnReviewModal({ request, onClose, onApprove, onFlag }) {
           <div className="mb-4 flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-800">
             <AlertTriangle size={15} className="shrink-0 mt-0.5" />
             <span>
-              This is re-submission #{request.returnAttempt}. The previous photo was flagged as{' '}
+              This is re-submission #{request.returnAttempt}. The previous proof was flagged as{' '}
               <span className="font-semibold">{request.returnReview?.verdict?.replace(/_/g, ' ')}</span>
               {request.returnReview?.remarks ? ` — “${request.returnReview.remarks}”` : ''}.
             </span>
@@ -250,7 +251,7 @@ function ReturnReviewModal({ request, onClose, onApprove, onFlag }) {
           {/* Photo */}
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              Student Photo
+              Student Photos
             </p>
             <ReturnProofCard request={request} size="lg" />
           </div>
@@ -693,16 +694,12 @@ export default function BorrowingReturns() {
                       )}
                     </td>
                     <td data-label="Proof">
-                      {proofSrc(r.returnProof) ? (
+                      {proofPhotos(r.returnProof).length > 0 ? (
                         <button
                           onClick={() => setReviewTarget(r)}
                           className="flex items-center gap-1.5 text-xs font-medium text-crimson hover:text-gold"
                         >
-                          <img
-                            src={proofSrc(r.returnProof)}
-                            alt="Return proof"
-                            className="w-9 h-9 object-cover rounded-lg border border-gray-200"
-                          />
+                          <ProofThumb proof={r.returnProof} />
                           View
                         </button>
                       ) : (

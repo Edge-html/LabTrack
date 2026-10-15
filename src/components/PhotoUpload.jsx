@@ -1,72 +1,117 @@
 import React, { useRef, useState } from 'react';
-import { Camera, ImagePlus, X, Loader2 } from 'lucide-react';
-import { validateImageFile } from '../lib/upload';
+import { Camera, ImagePlus, Images, X, Loader2 } from 'lucide-react';
+import { validateImageFile, MAX_PROOF_PHOTOS } from '../lib/upload';
 
 /**
- * Image picker with an inline preview, click-to-select and drag-and-drop.
+ * Multi-photo picker with thumbnails, click-to-select, drag-and-drop and a
+ * dedicated camera trigger for phones.
  *
  * Compression and the actual upload are the caller's concern — this component
- * only validates and previews the picked File.
+ * only validates and previews the picked Files.
  */
-export default function PhotoUpload({ file, previewUrl, onChange, error, disabled, hint }) {
-  const inputRef = useRef(null);
+export default function PhotoUpload({
+  files = [],
+  previews = [],
+  onChange,
+  error,
+  disabled,
+  hint,
+  max = MAX_PROOF_PHOTOS,
+}) {
+  const cameraRef = useRef(null);
+  const galleryRef = useRef(null);
   const [localError, setLocalError] = useState('');
   const [dragOver, setDragOver] = useState(false);
 
-  function handleFiles(files) {
-    const picked = files?.[0];
-    if (!picked) return;
-    const msg = validateImageFile(picked);
-    setLocalError(msg || '');
-    onChange(msg ? null : picked);
+  const roomLeft = max - files.length;
+  const full = files.length >= max;
+
+  function addFiles(picked) {
+    if (disabled || !picked?.length) return;
+
+    const accepted = [];
+    let msg = '';
+
+    for (const file of Array.from(picked)) {
+      if (accepted.length >= roomLeft) {
+        msg = `You can attach up to ${max} photos.`;
+        break;
+      }
+      const problem = validateImageFile(file);
+      if (problem && !msg) msg = problem;
+      else if (!problem) accepted.push(file);
+    }
+
+    setLocalError(msg);
+    onChange?.([...files, ...accepted]);
   }
 
-  const hasImage = !!file && !!previewUrl;
+  function removeAt(index) {
+    setLocalError('');
+    onChange?.(files.filter((_, i) => i !== index));
+  }
+
+  const picker = (
+    <input
+      ref={cameraRef}
+      type="file"
+      accept="image/*"
+      capture="environment"
+      className="hidden"
+      disabled={disabled}
+      onChange={e => {
+        addFiles(e.target.files);
+        e.target.value = '';
+      }}
+    />
+  );
+
+  const gallery = (
+    <input
+      ref={galleryRef}
+      type="file"
+      accept="image/*"
+      multiple
+      className="hidden"
+      disabled={disabled}
+      onChange={e => {
+        addFiles(e.target.files);
+        e.target.value = '';
+      }}
+    />
+  );
+
+  const addButtons = (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      <button
+        type="button"
+        disabled={disabled || full}
+        onClick={() => cameraRef.current?.click()}
+        className="btn-secondary btn-sm"
+      >
+        <Camera size={14} /> Take photo
+      </button>
+      <button
+        type="button"
+        disabled={disabled || full}
+        onClick={() => galleryRef.current?.click()}
+        className="btn-secondary btn-sm"
+      >
+        <Images size={14} /> Choose photos
+      </button>
+    </div>
+  );
 
   return (
     <div className="space-y-2">
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={e => {
-          handleFiles(e.target.files);
-          e.target.value = '';
-        }}
-      />
+      {picker}
+      {gallery}
 
-      {hasImage ? (
-        <div className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-          <img
-            src={previewUrl}
-            alt="Return proof preview"
-            className="w-full max-h-72 object-contain bg-gray-100"
-          />
-          {!disabled && (
-            <button
-              type="button"
-              onClick={() => {
-                setLocalError('');
-                onChange(null);
-              }}
-              className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-full shadow hover:bg-white text-gray-600 hover:text-red-600 transition-colors"
-              aria-label="Remove photo"
-            >
-              <X size={16} />
-            </button>
-          )}
-          <div className="px-3 py-2 text-xs text-gray-500 border-t border-gray-200 bg-white flex items-center gap-1.5">
-            <ImagePlus size={12} className="shrink-0" />
-            <span className="truncate">{file.name}</span>
-          </div>
-        </div>
-      ) : (
+      {files.length === 0 ? (
         <button
           type="button"
           disabled={disabled}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => galleryRef.current?.click()}
           onDragOver={e => {
             e.preventDefault();
             setDragOver(true);
@@ -75,7 +120,7 @@ export default function PhotoUpload({ file, previewUrl, onChange, error, disable
           onDrop={e => {
             e.preventDefault();
             setDragOver(false);
-            if (!disabled) handleFiles(e.dataTransfer.files);
+            if (!disabled) addFiles(e.dataTransfer.files);
           }}
           className={`w-full flex flex-col items-center justify-center gap-2 py-8 px-4 rounded-xl border-2 border-dashed transition-colors ${
             dragOver
@@ -89,12 +134,66 @@ export default function PhotoUpload({ file, previewUrl, onChange, error, disable
             <Camera size={28} className="text-gray-400" strokeWidth={1.6} />
           )}
           <span className="text-sm font-medium text-gray-700">
-            {disabled ? 'Uploading…' : 'Tap to take or choose a photo'}
+            {disabled ? 'Uploading…' : 'Tap to take or choose photos'}
           </span>
           <span className="text-xs text-gray-400">
-            {hint || 'JPG, PNG or WebP · up to 10 MB'}
+            {hint || `Up to ${max} photos · JPG, PNG or WebP · up to 10 MB each`}
           </span>
         </button>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {files.map((file, i) => (
+              <div
+                key={`${file.name}-${file.size}-${i}`}
+                className="relative rounded-xl overflow-hidden border border-gray-200 bg-gray-50 group"
+              >
+                <img
+                  src={previews[i]}
+                  alt={`Return proof photo ${i + 1}`}
+                  className="w-full h-28 object-cover"
+                />
+                {!disabled && (
+                  <button
+                    type="button"
+                    onClick={() => removeAt(i)}
+                    className="absolute top-1.5 right-1.5 p-1 bg-white/90 rounded-full shadow hover:bg-white text-gray-600 hover:text-red-600 transition-colors"
+                    aria-label={`Remove photo ${i + 1}`}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+                <span className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 bg-black/65 text-white text-[10px] font-bold rounded">
+                  {i + 1}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-gray-500 inline-flex items-center gap-1.5">
+                <ImagePlus size={12} className="shrink-0" />
+                {files.length} of {max} photo{files.length > 1 ? 's' : ''} attached
+              </p>
+              {!full && !disabled && (
+                <button
+                  type="button"
+                  onClick={() => onChange?.([])}
+                  className="text-xs font-medium text-red-500 hover:text-red-600"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+            {!full && <div className="flex justify-center">{addButtons}</div>}
+            {full && (
+              <p className="text-center text-xs text-gray-400">
+                Maximum of {max} photos reached — remove one to attach another.
+              </p>
+            )}
+          </div>
+        </div>
       )}
 
       {(localError || error) && (

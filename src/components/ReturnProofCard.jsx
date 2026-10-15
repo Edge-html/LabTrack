@@ -1,50 +1,73 @@
 import React, { useState } from 'react';
 import {
-  Camera, Clock3, CheckCircle2, XCircle, AlertTriangle, Maximize2, MessageSquare, X,
+  Clock3, CheckCircle2, XCircle, AlertTriangle, Maximize2, MessageSquare, X,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { formatTimestamp, timeAgo } from '../lib/helpers';
-import { proofSrc } from '../lib/upload';
+import { proofPhotos } from '../lib/upload';
 
 /**
- * Renders a student's return-proof photo together with the time it was
+ * Renders a student's return-proof photo(s) together with the time it was
  * submitted and, when present, the laboratory's assessment.
  *
  * @param {object} request The equipment request document (must carry `returnProof`).
  * @param {'sm'|'md'|'lg'} size
  */
 export default function ReturnProofCard({ request, size = 'md' }) {
-  const [lightbox, setLightbox] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
   const proof = request?.returnProof;
   const review = request?.returnReview;
-  const src = proofSrc(proof);
+  const photos = proofPhotos(proof);
 
-  if (!src) return null;
+  if (!photos.length) return null;
 
+  const open = lightbox != null && photos[lightbox] ? lightbox : null;
   const imgH = size === 'sm' ? 'max-h-40' : size === 'lg' ? 'max-h-[420px]' : 'max-h-64';
+  const gridCols = photos.length === 1 ? '' : photos.length === 2 ? 'sm:grid-cols-2' : 'grid-cols-2 sm:grid-cols-3';
+  const totalSize = photos.reduce((sum, p) => sum + (p.size || 0), 0);
 
   return (
     <>
       <div className="space-y-3">
-        {/* Photo */}
-        <div className={`relative ${imgH} overflow-hidden rounded-xl border border-gray-200 bg-gray-50 group`}>
-          <img
-            src={src}
-            alt="Return proof submitted by student"
-            className={`w-full ${imgH} object-contain`}
-          />
-          <button
-            type="button"
-            onClick={() => setLightbox(true)}
-            className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg shadow hover:bg-white text-gray-600 transition-colors"
-            aria-label="View full size"
-          >
-            <Maximize2 size={15} />
-          </button>
-          {request.returnAttempt > 1 && (
-            <span className="absolute bottom-2 left-1 px-2 py-0.5 bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded">
-              Re-submission #{request.returnAttempt}
-            </span>
-          )}
+        {/* Photos */}
+        <div className={`grid grid-cols-1 gap-2 ${gridCols}`}>
+          {photos.map((photo, i) => (
+            <div
+              key={i}
+              className={`relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50 group ${photos.length === 1 ? imgH : ''}`}
+            >
+              <button
+                type="button"
+                onClick={() => setLightbox(i)}
+                className={`block w-full ${photos.length === 1 ? imgH : ''}`}
+                aria-label={`View proof photo ${i + 1} full size`}
+              >
+                <img
+                  src={photo.dataUrl}
+                  alt={`Return proof photo ${i + 1} submitted by student`}
+                  className={`w-full object-contain ${photos.length === 1 ? imgH : 'h-44'}`}
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => setLightbox(i)}
+                className="absolute top-2 right-2 p-1.5 bg-white/90 rounded-lg shadow hover:bg-white text-gray-600 transition-colors"
+                aria-label="View full size"
+              >
+                <Maximize2 size={15} />
+              </button>
+              {photos.length > 1 && (
+                <span className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded">
+                  {i + 1} of {photos.length}
+                </span>
+              )}
+              {request.returnAttempt > 1 && i === 0 && (
+                <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/70 text-white text-[10px] font-bold uppercase tracking-wider rounded">
+                  Re-submission #{request.returnAttempt}
+                </span>
+              )}
+            </div>
+          ))}
         </div>
 
         {/* When it was submitted */}
@@ -54,9 +77,12 @@ export default function ReturnProofCard({ request, size = 'md' }) {
             Return proof sent {formatTimestamp(request.returnSubmittedAt)}
           </span>
           <span className="text-gray-400">({timeAgo(request.returnSubmittedAt)})</span>
+          {photos.length > 1 && (
+            <span className="text-gray-400">{photos.length} photos attached</span>
+          )}
           {proof.width > 0 && (
             <span className="text-gray-400">
-              {proof.width}×{proof.height} · {Math.round((proof.size || 0) / 1024)} KB
+              {proof.width}×{proof.height} · {Math.round(totalSize / 1024)} KB
             </span>
           )}
         </div>
@@ -73,25 +99,67 @@ export default function ReturnProofCard({ request, size = 'md' }) {
         {review && <VerdictBanner review={review} />}
       </div>
 
-      {lightbox && (
-        <div
-          className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4 animate-fade-in"
-          onClick={() => setLightbox(false)}
-        >
-          <button
-            className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-          <img
-            src={src}
-            alt="Return proof (full size)"
-            className="max-h-full max-w-full object-contain rounded-lg"
-          />
-        </div>
+      {open != null && (
+        <Lightbox
+          photos={photos}
+          index={open}
+          onIndex={setLightbox}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </>
+  );
+}
+
+function Lightbox({ photos, index, onIndex, onClose }) {
+  const go = delta => {
+    onIndex((index + delta + photos.length) % photos.length);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-4 animate-fade-in"
+      onClick={onClose}
+    >
+      <button
+        className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white"
+        aria-label="Close"
+      >
+        <X size={20} />
+      </button>
+
+      {photos.length > 1 && (
+        <>
+          <button
+            onClick={e => { e.stopPropagation(); go(-1); }}
+            className="absolute left-3 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white"
+            aria-label="Previous photo"
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); go(1); }}
+            className="absolute right-3 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white"
+            aria-label="Next photo"
+          >
+            <ChevronRight size={22} />
+          </button>
+        </>
+      )}
+
+      <img
+        src={photos[index].dataUrl}
+        alt={`Return proof ${index + 1} (full size)`}
+        className="max-h-full max-w-full object-contain rounded-lg"
+        onClick={e => e.stopPropagation()}
+      />
+
+      {photos.length > 1 && (
+        <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white text-xs font-semibold bg-black/50 px-3 py-1 rounded-full">
+          {index + 1} / {photos.length}
+        </p>
+      )}
+    </div>
   );
 }
 

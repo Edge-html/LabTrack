@@ -1,7 +1,8 @@
 import React from 'react';
 import { Shield, Users, BookOpen, Heart } from 'lucide-react';
-import knchsLogo from '../assets/knchs-logo.png';
 import labPics3 from '../assets/lab-pics3.png';
+
+const LABTRACK_LOGO = '/images/labtrack_logo.png';
 
 export default function About() {
   return (
@@ -20,9 +21,9 @@ export default function About() {
             <div className="relative mb-4">
               <div className="absolute -inset-0.5 bg-gradient-to-r from-gold to-gold-light rounded-full blur-[2px] opacity-60"></div>
               <img
-                src={knchsLogo}
-                alt="KNCHS School Seal"
-                className="relative w-20 h-20 rounded-full object-contain bg-white p-1 shadow-lg ring-2 ring-gold/80"
+                src={LABTRACK_LOGO}
+                alt="LabTrack logo"
+                className="relative w-24 h-24 rounded-full object-contain bg-white p-1 shadow-lg ring-2 ring-gold/80"
                 loading="lazy"
               />
             </div>
