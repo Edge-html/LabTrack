@@ -163,16 +163,29 @@ export default function ManageRequests() {
   async function handleApprove(request, adjustedItems, remarks) {
     try {
       await runTransaction(db, async (tx) => {
-        // Re-read each equipment doc
-        for (const item of adjustedItems) {
-          const eqRef = doc(db, 'equipment', item.equipmentId);
-          const eqSnap = await tx.get(eqRef);
-          if (!eqSnap.exists()) throw new Error(`Equipment "${item.name}" not found.`);
-          const avail = eqSnap.data().availableQty;
+        // Firestore requires every read to finish before the first write,
+        // so collect all equipment snapshots up front.
+        const eqRefs = adjustedItems.map(item => doc(db, 'equipment', item.equipmentId));
+        const eqSnaps = [];
+        for (const ref of eqRefs) {
+          eqSnaps.push(await tx.get(ref));
+        }
+
+        // Validate before mutating anything.
+        adjustedItems.forEach((item, i) => {
+          if (!eqSnaps[i].exists()) throw new Error(`Equipment "${item.name}" not found.`);
+          const avail = eqSnaps[i].data().availableQty;
           const qty = item.qtyApproved || item.qtyRequested;
           if (avail < qty) throw new Error(`Insufficient stock for "${item.name}". Available: ${avail}`);
-          tx.update(eqRef, { availableQty: avail - qty, updatedAt: serverTimestamp() });
-        }
+        });
+
+        // Now the writes.
+        adjustedItems.forEach((item, i) => {
+          const avail = eqSnaps[i].data().availableQty;
+          const qty = item.qtyApproved || item.qtyRequested;
+          tx.update(eqRefs[i], { availableQty: avail - qty, updatedAt: serverTimestamp() });
+        });
+
         const reqRef = doc(db, 'requests', request.id);
         tx.update(reqRef, {
           status: 'approved',
@@ -198,16 +211,20 @@ export default function ManageRequests() {
       // If was approved, restore stock
       if (request.status === 'approved') {
         await runTransaction(db, async (tx) => {
-          for (const item of (request.items || [])) {
-            const eqRef = doc(db, 'equipment', item.equipmentId);
-            const eqSnap = await tx.get(eqRef);
-            if (eqSnap.exists()) {
-              tx.update(eqRef, {
-                availableQty: eqSnap.data().availableQty + (item.qtyRequested || 0),
+          const items = request.items || [];
+          const eqRefs = items.map(item => doc(db, 'equipment', item.equipmentId));
+          const eqSnaps = [];
+          for (const ref of eqRefs) {
+            eqSnaps.push(await tx.get(ref)); // all reads first
+          }
+          eqSnaps.forEach((snap, i) => {
+            if (snap.exists()) {
+              tx.update(eqRefs[i], {
+                availableQty: snap.data().availableQty + (items[i].qtyRequested || 0),
                 updatedAt: serverTimestamp(),
               });
             }
-          }
+          });
           tx.update(doc(db, 'requests', request.id), {
             status: 'rejected',
             staffRemarks: reason,

@@ -444,19 +444,23 @@ export default function BorrowingReturns() {
   async function handleMarkBorrowed(request, releaseDate, items) {
     try {
       await runTransaction(db, async (tx) => {
-        for (const item of items) {
-          const eqRef = doc(db, 'equipment', item.equipmentId);
-          const eqSnap = await tx.get(eqRef);
-          if (eqSnap.exists()) {
-            const diff = (item.qtyRequested || 0) - (item.qtyReleased || 0);
-            if (diff > 0) {
-              tx.update(eqRef, {
-                availableQty: eqSnap.data().availableQty + diff,
-                updatedAt: serverTimestamp(),
-              });
-            }
-          }
+        // All reads must complete before the first write.
+        const eqRefs = items.map(item => doc(db, 'equipment', item.equipmentId));
+        const eqSnaps = [];
+        for (const ref of eqRefs) {
+          eqSnaps.push(await tx.get(ref));
         }
+        eqSnaps.forEach((snap, i) => {
+          if (!snap.exists()) return;
+          // If released < approved, return the difference
+          const diff = (items[i].qtyRequested || 0) - (items[i].qtyReleased || 0);
+          if (diff > 0) {
+            tx.update(eqRefs[i], {
+              availableQty: snap.data().availableQty + diff,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        });
         tx.update(doc(db, 'requests', request.id), {
           status: 'borrowed',
           releaseDate,
@@ -479,20 +483,23 @@ export default function BorrowingReturns() {
    */
   async function commitReturned(request, returnDate, items, review) {
     await runTransaction(db, async (tx) => {
-      for (const item of items) {
-        const eqRef = doc(db, 'equipment', item.equipmentId);
-        const eqSnap = await tx.get(eqRef);
-        if (eqSnap.exists()) {
-          const data = eqSnap.data();
-          const returnQty = (item.qtyReturned || 0) - (item.qtyDamaged || 0);
-          const missingQty = item.qtyMissing || 0;
-          tx.update(eqRef, {
-            availableQty: Math.max(0, data.availableQty + returnQty),
-            totalQty: Math.max(0, data.totalQty - missingQty),
-            updatedAt: serverTimestamp(),
-          });
-        }
+      // All reads must complete before the first write.
+      const eqRefs = items.map(item => doc(db, 'equipment', item.equipmentId));
+      const eqSnaps = [];
+      for (const ref of eqRefs) {
+        eqSnaps.push(await tx.get(ref));
       }
+      eqSnaps.forEach((snap, i) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        const returnQty = (items[i].qtyReturned || 0) - (items[i].qtyDamaged || 0);
+        const missingQty = items[i].qtyMissing || 0;
+        tx.update(eqRefs[i], {
+          availableQty: Math.max(0, data.availableQty + returnQty),
+          totalQty: Math.max(0, data.totalQty - missingQty),
+          updatedAt: serverTimestamp(),
+        });
+      });
       tx.update(doc(db, 'requests', request.id), {
         status: 'returned',
         actualReturnDate: returnDate,
