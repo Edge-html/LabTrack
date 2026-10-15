@@ -169,6 +169,7 @@ requests/{id}
   staffRemarks, lateRequestFlag,
   createdAt,                                   ← request SENT time
   approvedAt, releasedAt, returnedAt,          ← lifecycle timestamps
+  notifSeenAt,                                 ← per-user, on users/{uid} only
   returnProof: { dataUrl, contentType, size, width, height, capturedAt,
                  count, photos[]: { dataUrl, contentType, size,
                                     width, height, name } },
@@ -219,6 +220,34 @@ before multi-photo support are read back as a single photo by `proofPhotos()`.
 
 Access is governed by the `requests` rules: only the owning student can
 write a proof, and the owning student plus admins can read it.
+
+### Notifications
+
+There is **no `notifications` collection**. Every notification is *derived* from the collections
+that already exist, so the data model stays small and notifications work retroactively — a
+request approved last term still raises the right notification today.
+
+`src/lib/notifications.js` is pure logic (no React, no Firestore) and holds the whole catalogue:
+
+- `buildStudentNotifications({ requests, bookings, warnings, penalties })`
+- `buildAdminNotifications({ pendingRequests, returnProofs, overdueReturns, flaggedReturns, pendingBookings, today })`
+- `buildCounts({ isAdmin, data })` — sidebar badges
+- `isUnread(notification, seenAt)` — read state
+
+Each notification carries the route it belongs to, so clicking one lands on the exact record
+where the page understands a parameter (`/admin/borrowing?id=…&action=return`,
+`/admin/lab-bookings?id=…`, `/my-lab-bookings?booking=…`) or on its section otherwise. The old
+bell always sent you to one hard-coded page, which is what this replaces.
+
+`src/context/NotificationContext.jsx` owns the subscriptions (single-field equality queries only,
+so no new Firestore indexes are required) and feeds both the bell and the sidebar badges, which
+means the two can never disagree.
+
+**Read state** is one watermark: `users/{uid}.notifSeenAt`. Anything at or before it has been
+seen. Clicking a single notification advances the watermark to that item's timestamp, so it is
+marked read without swallowing the newer ones; "Mark all read" advances it to now. Sidebar badges
+intentionally stay "how many need attention" rather than "how many unread", so opening the bell
+never silently clears an alert from the sidebar.
 
 ---
 

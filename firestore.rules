@@ -25,7 +25,8 @@ service cloud.firestore {
         && !('borrowRestrictedUntil' in request.resource.data)
         && !('restrictionReason' in request.resource.data);
 
-      // Update own doc: cannot change role, borrowRestrictedUntil, or restrictionReason; gradeLevel must be 11 or 12 if changed
+      // Update own doc: cannot change role, borrowRestrictedUntil, or restrictionReason; gradeLevel must be 11 or 12 if changed.
+      // `notifSeenAt` is the notification read watermark and is safe for a student to move themselves.
       allow update: if isSignedIn()
         && request.auth.uid == uid
         && (!('gradeLevel' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'])

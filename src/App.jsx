@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { NotificationProvider } from './context/NotificationContext';
 import { firebaseConfigured, missingVars } from './lib/firebase';
 
 // Pages
@@ -71,6 +72,9 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
+          {/* Notifications derive from live Firestore data; the provider is
+              router-aware because the bell navigates on click. */}
+          <NotificationProvider>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
@@ -103,6 +107,7 @@ export default function App() {
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </NotificationProvider>
         </BrowserRouter>
       </ToastProvider>
     </AuthProvider>

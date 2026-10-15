@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Package, ClipboardList, FileText, BookOpen, Info,
-  Settings, Users, BarChart2, AlertTriangle, Bell, ChevronDown,
+  Settings, Users, BarChart2, AlertTriangle, ChevronDown,
   LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 /** Main LabTrack mark, served from `public/images/`. */
 const LABTRACK_LOGO = '/images/labtrack_logo.png';
@@ -188,8 +189,8 @@ export function Sidebar({ mobileOpen, onClose, notifCounts = {} }) {
   );
 }
 
-export function Header({ onMenuClick, notifCount }) {
-  const { userProfile, isAdmin, logout } = useAuth();
+export function Header({ onMenuClick }) {
+  const { userProfile, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -223,20 +224,8 @@ export function Header({ onMenuClick, notifCount }) {
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        {/* Notification bell */}
-        <Link
-          to={isAdmin ? '/admin/borrowing' : '/my-requests'}
-          className="relative p-2 rounded-xl hover:bg-white/10 transition-colors text-cream hover:text-white"
-          aria-label="Notifications"
-          title={isAdmin ? 'Items awaiting your review' : 'Items needing your attention'}
-        >
-          <Bell size={18} strokeWidth={1.8} />
-          {notifCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 bg-flame text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-sm">
-              {notifCount > 9 ? '9+' : notifCount}
-            </span>
-          )}
-        </Link>
+        {/* Notifications — panel with per-item deep links */}
+        <NotificationBell />
 
         {/* User menu */}
         <div className="relative">
