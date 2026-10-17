@@ -1,31 +1,29 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { firebaseConfigured, missingVars } from './lib/firebase';
 
-// Pages
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Home from './pages/Home';
-import Inventory from './pages/Inventory';
-import RequestEquipment from './pages/RequestEquipment';
-import MyRequests from './pages/MyRequests';
-import RequestDetails from './pages/RequestDetails';
-import RulesPenalties from './pages/RulesPenalties';
-import About from './pages/About';
-import LabBooking from './pages/LabBooking';
-import MyLabBookings from './pages/MyLabBookings';
-import LabSchedule from './pages/LabSchedule';
-
-// Admin pages
-import ManageRequests from './pages/admin/ManageRequests';
-import BorrowingReturns from './pages/admin/BorrowingReturns';
-import PenaltiesViolations from './pages/admin/PenaltiesViolations';
-import AdminSettings from './pages/admin/AdminSettings';
-import ManageLabBookings from './pages/admin/ManageLabBookings';
-import Warnings from './pages/admin/Warnings';
+// Load each screen on demand so students do not download admin code up front.
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const Home = lazy(() => import('./pages/Home'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const RequestEquipment = lazy(() => import('./pages/RequestEquipment'));
+const MyRequests = lazy(() => import('./pages/MyRequests'));
+const RequestDetails = lazy(() => import('./pages/RequestDetails'));
+const RulesPenalties = lazy(() => import('./pages/RulesPenalties'));
+const About = lazy(() => import('./pages/About'));
+const LabBooking = lazy(() => import('./pages/LabBooking'));
+const MyLabBookings = lazy(() => import('./pages/MyLabBookings'));
+const LabSchedule = lazy(() => import('./pages/LabSchedule'));
+const ManageRequests = lazy(() => import('./pages/admin/ManageRequests'));
+const BorrowingReturns = lazy(() => import('./pages/admin/BorrowingReturns'));
+const PenaltiesViolations = lazy(() => import('./pages/admin/PenaltiesViolations'));
+const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
+const ManageLabBookings = lazy(() => import('./pages/admin/ManageLabBookings'));
+const Warnings = lazy(() => import('./pages/admin/Warnings'));
 
 // Guards
 import { RequireAuth, RequireAdmin } from './components/RouteGuards';
@@ -75,6 +73,7 @@ export default function App() {
           {/* Notifications derive from live Firestore data; the provider is
               router-aware because the bell navigates on click. */}
           <NotificationProvider>
+          <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-sm text-gray-500">Loading page…</div>}>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
@@ -107,6 +106,7 @@ export default function App() {
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
           </NotificationProvider>
         </BrowserRouter>
       </ToastProvider>

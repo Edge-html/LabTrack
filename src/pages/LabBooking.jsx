@@ -40,6 +40,8 @@ export default function LabBooking() {
   const [errors, setErrors] = useState({});
   const [existing, setExisting] = useState([]);
   const [checking, setChecking] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState(false);
+  const [availabilityRetry, setAvailabilityRetry] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const restricted = userProfile?.borrowRestrictedUntil && userProfile.borrowRestrictedUntil >= today;
@@ -50,6 +52,7 @@ export default function LabBooking() {
     if (!form.bookingDate || !form.labRoom) return;
     let cancelled = false;
     setChecking(true);
+    setAvailabilityError(false);
 
     (async () => {
       try {
@@ -65,14 +68,17 @@ export default function LabBooking() {
         }
       } catch (err) {
         console.error('Failed to check availability:', err);
-        if (!cancelled) setExisting([]);
+        if (!cancelled) {
+          setExisting([]);
+          setAvailabilityError(true);
+        }
       } finally {
         if (!cancelled) setChecking(false);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [form.bookingDate, form.labRoom]);
+  }, [form.bookingDate, form.labRoom, availabilityRetry]);
 
   /** Approved/pending bookings that clash with the selected slot. */
   const conflicts = existing.filter(
@@ -102,6 +108,11 @@ export default function LabBooking() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (restricted) return;
+
+    if (availabilityError) {
+      toast.error('Room availability could not be checked. Please try again before submitting.');
+      return;
+    }
 
     if (!isValidGradeLevel(userProfile?.gradeLevel)) {
       toast.error('Only Grade 11 and Grade 12 students may book a laboratory room.');
@@ -291,14 +302,14 @@ export default function LabBooking() {
 
           {/* Slot summary + conflicts */}
           <div className={`p-3 rounded-xl border text-sm ${
-            conflicts.length > 0
+            conflicts.length > 0 || availabilityError
               ? 'bg-red-50 border-red-200'
               : 'bg-green-50 border-green-200'
           }`}>
             <div className="flex items-start gap-2.5">
               {checking ? (
                 <Loader2 size={16} className="animate-spin text-gray-400 shrink-0 mt-0.5" />
-              ) : conflicts.length > 0 ? (
+              ) : conflicts.length > 0 || availabilityError ? (
                 <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
               ) : (
                 <Calendar size={16} className="text-green-600 shrink-0 mt-0.5" />
@@ -306,6 +317,13 @@ export default function LabBooking() {
               <div className="min-w-0">
                 {checking ? (
                   <p className="text-gray-600">Checking availability…</p>
+                ) : availabilityError ? (
+                  <div>
+                    <p className="font-semibold text-red-800">Could not check room availability.</p>
+                    <button type="button" className="text-red-700 underline text-xs mt-1" onClick={() => setAvailabilityRetry(v => v + 1)}>
+                      Try again
+                    </button>
+                  </div>
                 ) : conflicts.length > 0 ? (
                   <>
                     <p className="font-semibold text-red-800">
@@ -376,7 +394,7 @@ export default function LabBooking() {
 
           <button
             type="submit"
-            disabled={submitting || checking || conflicts.length > 0}
+            disabled={submitting || checking || availabilityError || conflicts.length > 0}
             className="btn-primary w-full justify-center"
           >
             {submitting ? (

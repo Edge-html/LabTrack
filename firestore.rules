@@ -12,6 +12,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isEligibleStudent() {
+      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return isSignedIn()
+        && profile.role == 'student'
+        && profile.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'];
+    }
+
     // ── users ───────────────────────────────────────────────────────────────
     match /users/{uid} {
       // A signed-in user can read their own doc; admin can read all
@@ -54,7 +61,9 @@ service cloud.firestore {
     match /requests/{docId} {
       // Student: create only with own userId and status "pending"
       allow create: if isSignedIn()
+        && isEligibleStudent()
         && request.resource.data.userId == request.auth.uid
+        && request.resource.data.gradeLevel == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gradeLevel
         && request.resource.data.status == 'pending';
 
       // Student: read only their own; admin reads all
@@ -91,7 +100,9 @@ service cloud.firestore {
     match /labBookings/{docId} {
       // Student: create only for self, status "pending"
       allow create: if isSignedIn()
+        && isEligibleStudent()
         && request.resource.data.userId == request.auth.uid
+        && request.resource.data.gradeLevel == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gradeLevel
         && request.resource.data.status == 'pending';
 
       // Any signed-in user may READ room bookings.
