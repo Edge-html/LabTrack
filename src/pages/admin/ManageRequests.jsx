@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BarChart2, Search, ChevronDown, Check, X, Edit2,
+  BarChart2, Search, ChevronDown, Check, X, Edit2, Trash2,
   AlertTriangle, Package, Clock,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   collection, query, onSnapshot, orderBy, limit,
-  runTransaction, doc, getDoc, serverTimestamp, updateDoc,
+  runTransaction, doc, getDoc, serverTimestamp, updateDoc, deleteDoc,
   where, getDocs,
 } from 'firebase/firestore';
 import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
@@ -130,6 +130,8 @@ export default function ManageRequests() {
   const [statusFilter, setStatusFilter] = useState('');
   const [rejectTarget, setRejectTarget] = useState(null);
   const [approveTarget, setApproveTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -242,6 +244,21 @@ export default function ManageRequests() {
       setRejectTarget(null);
     } catch (err) {
       toast.error('Reject failed: ' + err.message);
+    }
+  }
+
+  async function handleDeleteRequest() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'requests', deleteTarget.id));
+      setRequests(current => current.filter(request => request.id !== deleteTarget.id));
+      toast.success('Equipment request history deleted.');
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error('Could not delete request history: ' + err.message);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -378,6 +395,15 @@ export default function ManageRequests() {
                             Mark Returned
                           </Link>
                         )}
+                        {tab === 1 && ['returned', 'rejected'].includes(r.status) && (
+                          <button
+                            onClick={() => setDeleteTarget(r)}
+                            className="btn-danger btn-sm"
+                            title="Permanently delete this request history"
+                          >
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -402,6 +428,18 @@ export default function ManageRequests() {
           onConfirm={(items, remarks) => handleApprove(approveTarget, items, remarks)}
         />
       )}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete equipment request history?"
+        message={deleteTarget
+          ? `Permanently delete ${deleteTarget.borrowerName || 'this student'}’s ${deleteTarget.experiment || 'equipment'} request? This cannot be undone.`
+          : ''}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
+        onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={handleDeleteRequest}
+        busy={deleting}
+        danger
+      />
     </div>
   );
 }

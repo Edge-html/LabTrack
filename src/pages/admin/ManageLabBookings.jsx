@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
-  DoorOpen, Search, Check, X, LogIn, LogOut, AlertTriangle, Loader2, FlaskConical,
+  DoorOpen, Search, Check, X, LogIn, LogOut, AlertTriangle, Loader2, FlaskConical, Trash2,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
-  collection, query, where, getDocs, updateDoc, doc, serverTimestamp, limit, getDoc,
+  collection, query, where, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, limit, getDoc,
 } from 'firebase/firestore';
 import {
   formatDate, formatTimeOfDay, formatTimestamp, timeAgo,
@@ -15,6 +15,7 @@ import {
 import { LabStatusBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import BookingTimeline from '../../components/BookingTimeline';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 
 const TABS = ['Pending', 'Approved / In Use', 'History'];
 const STATUS_BY_TAB = [
@@ -130,6 +131,8 @@ export default function ManageLabBookings() {
   const [decision, setDecision] = useState(null); // { booking, action }
   const [useTarget, setUseTarget] = useState(null); // { booking, action }
   const [details, setDetails] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const preId = searchParams.get('id');
 
@@ -216,6 +219,22 @@ export default function ManageLabBookings() {
       load();
     } catch (err) {
       toast.error('Failed: ' + err.message);
+    }
+  }
+
+  async function handleDeleteBooking() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, 'labBookings', deleteTarget.id));
+      setBookings(current => current.filter(booking => booking.id !== deleteTarget.id));
+      if (details?.id === deleteTarget.id) setDetails(null);
+      toast.success('Booking history deleted.');
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error('Could not delete booking history: ' + err.message);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -377,6 +396,15 @@ export default function ManageLabBookings() {
                               <AlertTriangle size={13} /> Warn
                             </Link>
                           )}
+                          {tab === 2 && (
+                            <button
+                              onClick={() => setDeleteTarget(b)}
+                              className="btn-danger btn-sm"
+                              title="Permanently delete this booking history"
+                            >
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -413,6 +441,18 @@ export default function ManageLabBookings() {
           onConfirm={() => handleUse(useTarget.booking, useTarget.action)}
         />
       )}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete booking history?"
+        message={deleteTarget
+          ? `Permanently delete ${deleteTarget.studentName || 'this student'}’s ${deleteTarget.labRoom} booking for ${formatDate(deleteTarget.bookingDate)}? This cannot be undone.`
+          : ''}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
+        onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={handleDeleteBooking}
+        busy={deleting}
+        danger
+      />
     </div>
   );
 }

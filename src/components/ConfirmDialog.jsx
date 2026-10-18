@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 
-export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel, danger = false }) {
+export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', onConfirm, onCancel, danger = false, busy = false }) {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -15,14 +15,15 @@ export function ConfirmDialog({ isOpen, title, message, confirmLabel = 'Confirm'
             <h3 className="font-semibold text-gray-900">{title}</h3>
             <p className="text-sm text-gray-600 mt-1">{message}</p>
           </div>
-          <button onClick={onCancel} className="ml-auto text-gray-400 hover:text-gray-600">
+          <button onClick={onCancel} disabled={busy} className="ml-auto text-gray-400 hover:text-gray-600 disabled:opacity-50">
             <X size={18} />
           </button>
         </div>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="btn-secondary btn-sm">{cancelLabel}</button>
+          <button onClick={onCancel} disabled={busy} className="btn-secondary btn-sm">{cancelLabel}</button>
           <button
             onClick={onConfirm}
+            disabled={busy}
             className={`btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}`}
           >
             {confirmLabel}
