@@ -15,7 +15,8 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/LoadingSpinner';
 import Papa from 'papaparse';
 
-const EMPTY_ITEM = { name: '', category: '', totalQty: '', availableQty: '', condition: 'Good', description: '' };
+const LABS = ['Physics Lab', 'Biochem Lab'];
+const EMPTY_ITEM = { name: '', category: '', lab: '', totalQty: '', availableQty: '', condition: 'Good', description: '' };
 
 function EquipmentDrawer({ item, categories, conditions, onClose, onSave, isAdmin }) {
   const [form, setForm] = useState(item || EMPTY_ITEM);
@@ -24,8 +25,8 @@ function EquipmentDrawer({ item, categories, conditions, onClose, onSave, isAdmi
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!form.name.trim() || !form.category) {
-      toast.error('Name and category are required.');
+    if (!form.name.trim() || !form.category || !LABS.includes(form.lab)) {
+      toast.error('Name, category, and laboratory are required.');
       return;
     }
     const totalQty = parseInt(form.totalQty) || 0;
@@ -69,6 +70,18 @@ function EquipmentDrawer({ item, categories, conditions, onClose, onSave, isAdmi
             >
               <option value="">Select category</option>
               {categories.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Laboratory *</label>
+            <select
+              className="input"
+              value={form.lab || ''}
+              onChange={e => setForm(f => ({ ...f, lab: e.target.value }))}
+              required
+            >
+              <option value="">Assign a laboratory</option>
+              {LABS.map(lab => <option key={lab} value={lab}>{lab}</option>)}
             </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -138,6 +151,7 @@ function CSVImportModal({ categories, conditions, onClose, onImport }) {
           const rowNum = i + 2;
           if (!row.name?.trim()) errs.push(`Row ${rowNum}: Name is required.`);
           if (!row.category?.trim()) errs.push(`Row ${rowNum}: Category is required.`);
+          if (!LABS.includes(row.lab?.trim())) errs.push(`Row ${rowNum}: Lab must be Physics Lab or Biochem Lab.`);
           const total = parseInt(row.totalQty);
           const avail = parseInt(row.availableQty);
           if (isNaN(total) || total < 0) errs.push(`Row ${rowNum}: Invalid totalQty.`);
@@ -146,6 +160,7 @@ function CSVImportModal({ categories, conditions, onClose, onImport }) {
           return {
             name: row.name?.trim() || '',
             category: row.category?.trim() || '',
+            lab: row.lab?.trim() || '',
             totalQty: isNaN(total) ? 0 : total,
             availableQty: isNaN(avail) ? 0 : avail,
             condition: row.condition?.trim() || 'Good',
@@ -159,7 +174,7 @@ function CSVImportModal({ categories, conditions, onClose, onImport }) {
   }
 
   function downloadTemplate() {
-    const csv = 'name,category,totalQty,availableQty,condition,description\nBeaker,Glassware,20,15,Good,250ml beakers\n';
+    const csv = 'name,category,lab,totalQty,availableQty,condition,description\nBeaker,Glassware,Biochem Lab,20,15,Good,250ml beakers\n';
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -204,17 +219,17 @@ function CSVImportModal({ categories, conditions, onClose, onImport }) {
                 <table className="table text-xs">
                   <thead>
                     <tr>
-                      <th>Name</th><th>Category</th><th>Total</th><th>Available</th><th>Condition</th>
+                      <th>Name</th><th>Category</th><th>Laboratory</th><th>Total</th><th>Available</th><th>Condition</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.slice(0, 10).map((r, i) => (
                       <tr key={i}>
-                        <td>{r.name}</td><td>{r.category}</td>
+                        <td>{r.name}</td><td>{r.category}</td><td>{r.lab}</td>
                         <td>{r.totalQty}</td><td>{r.availableQty}</td><td>{r.condition}</td>
                       </tr>
                     ))}
-                    {rows.length > 10 && <tr><td colSpan={5} className="text-center text-gray-400">...and {rows.length - 10} more</td></tr>}
+                    {rows.length > 10 && <tr><td colSpan={6} className="text-center text-gray-400">...and {rows.length - 10} more</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -245,6 +260,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [labFilter, setLabFilter] = useState('');
   const [drawerItem, setDrawerItem] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -281,16 +297,17 @@ export default function Inventory() {
 
   const filtered = equipment.filter(e => {
     const q = search.toLowerCase();
-    const matchSearch = !q || e.name?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q);
+    const matchSearch = !q || e.name?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q) || (e.lab || 'Unassigned').toLowerCase().includes(q);
     const matchCat = !categoryFilter || e.category === categoryFilter;
-    return matchSearch && matchCat;
+    const matchLab = !labFilter || (e.lab || 'Unassigned') === labFilter;
+    return matchSearch && matchCat && matchLab;
   });
 
   async function handleSave(formData) {
     try {
       if (formData.id) {
         await updateDoc(doc(db, 'equipment', formData.id), {
-          name: formData.name, category: formData.category,
+          name: formData.name, category: formData.category, lab: formData.lab,
           totalQty: formData.totalQty, availableQty: formData.availableQty,
           condition: formData.condition, description: formData.description,
           updatedAt: serverTimestamp(),
@@ -337,8 +354,13 @@ export default function Inventory() {
   }
 
   async function handleBulkSave() {
-    const valid = bulkRows.filter(r => r.name.trim() && r.category);
+    const entered = bulkRows.filter(r => r.name.trim() || r.category || r.lab || r.totalQty || r.availableQty || r.description);
+    const valid = entered.filter(r => r.name.trim() && r.category && LABS.includes(r.lab));
     if (valid.length === 0) { toast.error('Add at least one complete row.'); return; }
+    if (valid.length !== entered.length) {
+      toast.error('Complete each equipment row and assign Physics Lab or Biochem Lab before saving.');
+      return;
+    }
     try {
       const batch = writeBatch(db);
       valid.forEach(row => {
@@ -387,7 +409,7 @@ export default function Inventory() {
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               className="input pl-9"
-              placeholder="Search by name or category…"
+              placeholder="Search name, category, or lab…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -400,10 +422,27 @@ export default function Inventory() {
             <option value="">All Categories</option>
             {categories.map(c => <option key={c}>{c}</option>)}
           </select>
+          <select
+            className="input w-auto min-w-[160px]"
+            value={labFilter}
+            onChange={e => setLabFilter(e.target.value)}
+            aria-label="Filter inventory by laboratory"
+          >
+            <option value="">All Laboratories</option>
+            <option value="Physics Lab">Physics Lab</option>
+            <option value="Biochem Lab">Biochem Lab</option>
+            <option value="Unassigned">Unassigned</option>
+          </select>
         </div>
 
+        {isAdmin && equipment.some(item => !LABS.includes(item.lab)) && (
+          <div className="mx-4 mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            {equipment.filter(item => !LABS.includes(item.lab)).length} equipment item(s) still need a lab assignment. Edit them to place them under Physics Lab or Biochem Lab; students will see these under Unassigned until then.
+          </div>
+        )}
+
         {loading ? (
-          <TableSkeleton rows={6} cols={5} />
+          <TableSkeleton rows={6} cols={isAdmin ? 7 : 6} />
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-gray-400">
             <Package size={32} className="mx-auto mb-2 opacity-30" />
@@ -416,6 +455,7 @@ export default function Inventory() {
                 <tr>
                   <th>Equipment Name</th>
                   <th>Category</th>
+                  <th>Laboratory</th>
                   <th>Available Qty</th>
                   <th>Total Qty</th>
                   <th>Condition / Status</th>
@@ -427,6 +467,13 @@ export default function Inventory() {
                   <tr key={e.id}>
                     <td data-label="Name" className="font-medium">{e.name}</td>
                     <td data-label="Category">{e.category}</td>
+                    <td data-label="Laboratory">
+                      {e.lab ? (
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${e.lab === 'Physics Lab' ? 'bg-blue-50 text-blue-700' : 'bg-teal-50 text-teal-700'}`}>
+                          {e.lab}
+                        </span>
+                      ) : <span className="text-amber-700 text-xs">Unassigned</span>}
+                    </td>
                     <td data-label="Available">
                       <span className={`font-semibold ${e.availableQty === 0 ? 'text-red-600' : 'text-green-700'}`}>
                         {e.availableQty}
@@ -498,7 +545,7 @@ export default function Inventory() {
                 <table className="table text-xs">
                   <thead>
                     <tr>
-                      <th>Name *</th><th>Category *</th><th>Total Qty</th>
+                      <th>Name *</th><th>Category *</th><th>Laboratory *</th><th>Total Qty</th>
                       <th>Available Qty</th><th>Condition</th><th></th>
                     </tr>
                   </thead>
@@ -527,6 +574,19 @@ export default function Inventory() {
                           >
                             <option value="">Select</option>
                             {categories.map(c => <option key={c}>{c}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <select
+                            className="input text-xs min-h-[36px] py-1"
+                            value={row.lab}
+                            onChange={e => {
+                              const r = [...bulkRows]; r[i] = { ...r[i], lab: e.target.value };
+                              setBulkRows(r);
+                            }}
+                          >
+                            <option value="">Select lab</option>
+                            {LABS.map(lab => <option key={lab} value={lab}>{lab}</option>)}
                           </select>
                         </td>
                         <td>

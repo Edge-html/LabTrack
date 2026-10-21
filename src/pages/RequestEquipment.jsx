@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle,
+  ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle, Search,
   Calendar, User, BookOpen, Clock, Camera,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,7 @@ import {
 } from '../lib/helpers';
 
 const EMPTY_LINE = { equipmentId: '', name: '', qtyRequested: 1 };
+const LAB_GROUPS = ['Physics Lab', 'Biochem Lab', 'Unassigned'];
 
 export default function RequestEquipment() {
   const { userProfile } = useAuth();
@@ -28,6 +29,8 @@ export default function RequestEquipment() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [equipmentSearch, setEquipmentSearch] = useState('');
+  const [equipmentLabFilter, setEquipmentLabFilter] = useState('');
 
   const [form, setForm] = useState({
     requestDate: today,
@@ -162,6 +165,8 @@ export default function RequestEquipment() {
         return {
           equipmentId: l.equipmentId,
           name: l.name,
+          lab: getEquipmentAvail(l.equipmentId)?.lab || 'Unassigned',
+          category: getEquipmentAvail(l.equipmentId)?.category || '',
           qtyRequested: parseInt(l.qtyRequested) || 1,
           qtyReleased: 0,
           qtyReturned: 0,
@@ -331,10 +336,40 @@ export default function RequestEquipment() {
                 <Plus size={14} /> Add Item
               </button>
             </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="input pl-9"
+                  type="search"
+                  placeholder="Search equipment by name or category…"
+                  value={equipmentSearch}
+                  onChange={e => setEquipmentSearch(e.target.value)}
+                  aria-label="Search equipment"
+                />
+              </div>
+              <select
+                className="input w-auto min-w-[170px]"
+                value={equipmentLabFilter}
+                onChange={e => setEquipmentLabFilter(e.target.value)}
+                aria-label="Filter equipment by laboratory"
+              >
+                <option value="">All Laboratories</option>
+                {LAB_GROUPS.map(lab => <option key={lab} value={lab}>{lab}</option>)}
+              </select>
+            </div>
             <div className="space-y-2">
               {lines.map((line, i) => {
                 const eq = getEquipmentAvail(line.equipmentId);
                 const insufficient = eq && parseInt(line.qtyRequested) > eq.availableQty;
+                const q = equipmentSearch.trim().toLowerCase();
+                const lineEquipment = equipment.filter(item => {
+                  const lab = item.lab || 'Unassigned';
+                  const matchesSearch = !q || item.name?.toLowerCase().includes(q) || item.category?.toLowerCase().includes(q);
+                  const matchesLab = !equipmentLabFilter || lab === equipmentLabFilter;
+                  return (matchesSearch && matchesLab) || item.id === line.equipmentId;
+                });
+                const groups = [...new Set([...LAB_GROUPS, ...lineEquipment.map(item => item.lab || 'Unassigned')])];
                 return (
                   <div key={i} className="flex flex-wrap gap-2 items-start p-3 bg-gray-50 rounded-xl">
                     <div className="flex-[2] min-w-[140px]">
@@ -344,11 +379,19 @@ export default function RequestEquipment() {
                         onChange={e => setLine(i, 'equipmentId', e.target.value)}
                       >
                         <option value="">Select equipment</option>
-                        {equipment.map(e => (
-                          <option key={e.id} value={e.id}>
-                            {e.name} (avail: {e.availableQty})
-                          </option>
-                        ))}
+                        {lineEquipment.length === 0 && <option value="" disabled>No equipment matches your search</option>}
+                        {groups.map(lab => {
+                          const items = lineEquipment.filter(item => (item.lab || 'Unassigned') === lab);
+                          return items.length ? (
+                            <optgroup key={lab} label={lab}>
+                              {items.map(item => (
+                                <option key={item.id} value={item.id}>
+                                  [{lab}] {item.name} · {item.category} (available: {item.availableQty})
+                                </option>
+                              ))}
+                            </optgroup>
+                          ) : null;
+                        })}
                       </select>
                       {lineErrors[i] && <p className="text-xs text-red-600 mt-1">{lineErrors[i]}</p>}
                     </div>
