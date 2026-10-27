@@ -69,15 +69,20 @@ Output is in `dist/`.
 2. Click **Create database → Production mode**
 3. Region: **asia-southeast1 (Singapore)**
 
-### 3. Firestore Security Rules
+### 3. Migrate existing data before deploying the new rules
 
-1. In Firestore → **Rules tab**
-2. Paste the contents of `firestore.rules`
-3. Click **Publish**
+For an existing LabTrack installation, push this repository to GitHub and confirm the
+`FIREBASE_SERVICE_ACCOUNT_JSON` Actions secret is set. In **GitHub → Actions → Migrate LabTrack data**,
+choose **Run workflow** and wait for it to succeed. It creates sanitized room-calendar entries and
+moves legacy return photos out of request records. The migration is safe to run again.
 
-### 4. Firestore Indexes (CLI)
+Do not publish the new Firestore rules until the migration succeeds; students need the calendar
+projection for room availability and conflict checks. New installations with no existing bookings
+or return photos can deploy directly.
 
-Some queries need composite indexes. Deploy them all at once with the Firebase CLI:
+### 4. Deploy Firestore security rules and indexes
+
+Some queries need composite indexes. Deploy the rules and indexes together with the Firebase CLI:
 
 ```bash
 npm install -g firebase-tools
@@ -110,9 +115,9 @@ The key is used only by the scheduled workflow. Keep repository write access lim
 The app’s production build does not deploy Firestore rules or indexes, or change Authentication email templates. Deploy rules and indexes separately with `firebase deploy --only firestore` after selecting the correct Firebase project.
 
 > **Cloud Storage is NOT used.** This project runs on the Firebase **Spark** (free) plan,
-> which does not include Cloud Storage — only the Blaze plan does. Return-proof photos are
-> downscaled in the browser and stored as base64 data URLs directly on the request document
-> (see `src/lib/upload.js`). This keeps the project on the free tier.
+> which does not include Cloud Storage. Return-proof photos are downscaled in the browser and
+> stored as base64 data URLs in separate Firestore proof documents (see `src/lib/upload.js`).
+> Request lists therefore do not download image payloads, and this keeps the project on the free tier.
 
 ### Why photos live in Firestore
 
@@ -122,7 +127,7 @@ The app’s production build does not deploy Firestore rules or indexes, or chan
 | Doc/file size cap | 1 MiB per document | 5 GB per file |
 | How we use it | Photo compressed to ≤ ~700 KB base64 | — |
 
-Client-side compression runs through four quality passes and stops as soon as the encoded
+Client-side compression runs through six quality passes and stops as soon as the encoded
 image fits inside the Firestore document limit, so a typical photo lands around 100–250 KB.
 
 ---
@@ -193,9 +198,7 @@ requests/{id}
   createdAt,                                   ← request SENT time
   approvedAt, releasedAt, returnedAt,          ← lifecycle timestamps
   notifSeenAt,                                 ← per-user, on users/{uid} only
-  returnProof: { dataUrl, contentType, size, width, height, capturedAt,
-                 count, photos[]: { dataUrl, contentType, size,
-                                    width, height, name } },
+  returnProofMeta: { count, size, width, height },
   returnSubmittedAt, returnSubmittedNote, proposedReturnDate, returnAttempt,
   returnReview: { verdict: clean|damaged|not_cleaned, remarks,
                   reviewedBy, reviewedByName, reviewedAt,
@@ -212,6 +215,14 @@ labBookings/{id}
   submittedAt,                                 ← request SENT time
   approvedAt, approvedBy, checkedInAt, returnedAt,
   cancelledAt, rejectedAt, createdAt, updatedAt
+
+labBookingCalendar/{bookingId}  → { bookingDate, labRoom, startTime, endTime, status }
+labBookingMutex/{date_room}     → { bookingId, bookingDate, labRoom, revision }
+
+requestProofs/{requestId}
+  userId, contentType, size, width, height, count,
+  photos[]: { dataUrl, contentType, size, width, height, name },
+  capturedAt, attempt
 
 warnings/{id}
   userId, studentName, gradeLevel, section,
@@ -235,14 +246,14 @@ settings/contacts    → { list: [{ id, name, role, email, phone, location }] }
 ### Return-proof photos
 
 A student may attach up to `MAX_PROOF_PHOTOS` (5) photos in one submission. They are stored
-inline on `requests/{id}.returnProof.photos[]` as base64 data URLs — no file storage service
-required. Because a whole proof has to fit in a single Firestore document, the set shares one
+in `requestProofs/{requestId}.photos[]` as base64 data URLs — no file storage service
+required. Because the photos share one Firestore document, the set shares one
 ~700 KB base64 budget (`proofPhotoBudget(count)` divides it per photo), so more photos simply
-means lower resolution each. The top-level `dataUrl` mirrors the first photo, and proofs saved
-before multi-photo support are read back as a single photo by `proofPhotos()`.
+means lower resolution each. Legacy proofs with only a top-level `dataUrl` are read as a single
+photo by `proofPhotos()` during migration.
 
-Access is governed by the `requests` rules: only the owning student can
-write a proof, and the owning student plus admins can read it.
+Access is governed by the `requestProofs` rules: only the owning student can write a proof,
+and the owning student plus admins can read it.
 
 ### Notifications
 

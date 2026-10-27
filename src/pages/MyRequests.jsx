@@ -14,9 +14,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/LoadingSpinner';
 import ReturnProofModal from '../components/ReturnProofModal';
-import ProofThumb from '../components/ProofThumb';
 import WarningsPanel from '../components/WarningsPanel';
-import { proofPhotos } from '../lib/upload';
 
 const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'return_submitted', 'return_flagged', 'returned'];
 
@@ -196,8 +194,10 @@ export default function MyRequests() {
                     </td>
                     <td data-label="Status">
                       <StatusBadge status={r.status} expectedReturnDate={r.expectedReturnDate} />
-                      {proofPhotos(r.returnProof).length > 0 && (
-                        <ProofThumb proof={r.returnProof} className="mt-1 w-8 h-8" />
+                      {(r.returnProofMeta?.count > 0 || r.returnProof?.dataUrl || r.returnProof?.photos?.length > 0) && (
+                        <span className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500">
+                          <Camera size={12} /> Photo proof submitted
+                        </span>
                       )}
                     </td>
                     <td>

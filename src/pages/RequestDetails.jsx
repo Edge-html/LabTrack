@@ -16,7 +16,6 @@ import { PageLoader } from '../components/LoadingSpinner';
 import ReturnProofCard from '../components/ReturnProofCard';
 import ReturnProofModal from '../components/ReturnProofModal';
 import { WarningRow, useWarnings } from '../components/WarningsPanel';
-import { proofPhotos } from '../lib/upload';
 
 export default function RequestDetails() {
   const { id } = useParams();
@@ -84,6 +83,9 @@ export default function RequestDetails() {
   }
 
   const today = getTodayManila();
+  const hasReturnProof = Boolean(
+    request.returnProofMeta?.count || request.returnProof?.dataUrl || request.returnProof?.photos?.length
+  );
   const isOverdueFlag = ['borrowed', 'approved', 'return_submitted', 'return_flagged'].includes(request.status) &&
     request.expectedReturnDate < today;
 
@@ -174,11 +176,11 @@ export default function RequestDetails() {
       </div>
 
       {/* Return proof */}
-      {(proofPhotos(request.returnProof).length > 0 || request.status === 'return_submitted') && (
+      {(hasReturnProof || request.status === 'return_submitted') && (
         <div className="card">
           <div className="card-header"><Camera size={18} strokeWidth={1.8} /> Return Proof</div>
           <div className="p-4">
-            {proofPhotos(request.returnProof).length > 0 ? (
+            {hasReturnProof ? (
               <ReturnProofCard request={request} size="lg" />
             ) : (
               <p className="text-sm text-gray-500 flex items-center gap-2">
@@ -302,7 +304,7 @@ export default function RequestDetails() {
           <Link to="/admin/requests" className="btn-secondary btn-sm">
             <ArrowLeft size={14} /> Back to Manage Requests
           </Link>
-          {(request.status === 'return_submitted' || proofPhotos(request.returnProof).length > 0) && (
+          {(request.status === 'return_submitted' || hasReturnProof) && (
             <Link
               to={`/admin/borrowing?id=${request.id}&action=return`}
               className="btn-primary btn-sm"

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Upload, ShieldCheck, Loader2 } from 'lucide-react';
 import PhotoUpload from './PhotoUpload';
 import { db } from '../lib/firebase';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
   prepareReturnProofImage,
   proofPhotoBudget,
@@ -19,8 +19,8 @@ import { useToast } from '../context/ToastContext';
  * `return_submitted`, which puts it in the admin's review queue. The request is
  * NOT marked returned here — only laboratory staff can do that.
  *
- * Students may attach several photos (e.g. one angle per item); they are
- * compressed as a set so the whole proof still fits in one Firestore document.
+ * Students may attach several photos (e.g. one angle per item); the photo
+ * payload is kept in a separate document so request lists stay lightweight.
  */
 export default function ReturnProofModal({ request, onClose, onDone }) {
   const toast = useToast();
@@ -72,20 +72,15 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
         throw new Error('These photos are too large to store together. Please attach fewer or smaller photos.');
       }
 
-      // `dataUrl` mirrors the first photo so older readers keep working.
       const [first] = photos;
-
-      await updateDoc(doc(db, 'requests', request.id), {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'requests', request.id), {
         status: 'return_submitted',
-        returnProof: {
-          dataUrl: first.dataUrl,
-          contentType: first.contentType,
-          size: first.size,
+        returnProofMeta: {
+          count: photos.length,
+          size: photos.reduce((sum, photo) => sum + photo.size, 0),
           width: first.width,
           height: first.height,
-          count: photos.length,
-          photos,
-          capturedAt: serverTimestamp(),
         },
         returnSubmittedAt: serverTimestamp(),
         returnSubmittedNote: note.trim(),
@@ -93,6 +88,18 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
         returnAttempt: attempt + 1,
         updatedAt: serverTimestamp(),
       });
+      batch.set(doc(db, 'requestProofs', request.id), {
+        userId: request.userId,
+        contentType: first.contentType,
+        size: photos.reduce((sum, photo) => sum + photo.size, 0),
+        width: first.width,
+        height: first.height,
+        count: photos.length,
+        photos,
+        capturedAt: serverTimestamp(),
+        attempt: attempt + 1,
+      });
+      await batch.commit();
 
       toast.success(
         files.length > 1

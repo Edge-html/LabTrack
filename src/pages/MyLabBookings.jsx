@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import {
-  collection, query, where, getDocs, updateDoc, doc, serverTimestamp, limit,
+  collection, query, where, getDocs, doc, serverTimestamp, limit, writeBatch,
 } from 'firebase/firestore';
 import {
   formatDate, formatTimeOfDay, formatTimestamp, timeAgo,
@@ -81,11 +81,14 @@ export default function MyLabBookings() {
   async function handleCancel() {
     if (!cancelTarget) return;
     try {
-      await updateDoc(doc(db, 'labBookings', cancelTarget.id), {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'labBookings', cancelTarget.id), {
         status: 'cancelled',
         cancelledAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      batch.update(doc(db, 'labBookingCalendar', cancelTarget.id), { status: 'cancelled' });
+      await batch.commit();
       toast.success('Booking cancelled.');
       setCancelTarget(null);
       load();

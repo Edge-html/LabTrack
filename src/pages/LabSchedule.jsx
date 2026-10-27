@@ -12,6 +12,7 @@ import {
   minutesOfDay, toTimeString, LAB_ROOMS, isValidGradeLevel,
 } from '../lib/helpers';
 import { useLabRooms } from '../hooks/useLabRooms';
+import { LAB_BOOKING_BLOCKING_STATUSES } from '../lib/labBookings';
 
 /** Visible span of the day on the grid. */
 const DAY_START = 7 * 60;  // 7:00 AM
@@ -20,8 +21,6 @@ const HOUR_H = 56;         // px per hour
 const GRID_H = ((DAY_END - DAY_START) / 60) * HOUR_H;
 const HOURS = Array.from({ length: (DAY_END - DAY_START) / 60 }, (_, i) => DAY_START / 60 + i);
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-
-const BLOCKING_STATUSES = ['pending', 'approved'];
 
 /** Monday of the week containing `dateStr`. */
 function startOfWeek(dateStr) {
@@ -96,10 +95,12 @@ export default function LabSchedule() {
     setLoading(true);
     setSelected(null);
     try {
-      // Single-field range query — no composite index required.
+      // Students read only the sanitized calendar projection. Admins may use
+      // full records for names and purposes in the staff calendar.
+      const source = isAdmin ? 'labBookings' : 'labBookingCalendar';
       const snap = await getDocs(
         query(
-          collection(db, 'labBookings'),
+          collection(db, source),
           where('bookingDate', '>=', weekStart),
           where('bookingDate', '<=', weekEnd),
           limit(500)
@@ -115,7 +116,7 @@ export default function LabSchedule() {
   }
 
   const roomBookings = bookings.filter(
-    b => b.labRoom === roomId && BLOCKING_STATUSES.includes(b.status)
+    b => b.labRoom === roomId && LAB_BOOKING_BLOCKING_STATUSES.includes(b.status)
   );
 
   const byDay = useMemo(() => {

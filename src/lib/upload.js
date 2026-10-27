@@ -7,7 +7,8 @@
  * inside the request document.
  *
  * Firestore caps a document at 1 MiB, and base64 inflates binary data by ~33%,
- * so we aggressively compress to stay well under that ceiling.
+ * so we aggressively compress to stay well under that ceiling. Proof payloads
+ * live in requestProofs/{requestId}; request documents keep only small metadata.
  */
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // what we accept from the camera roll

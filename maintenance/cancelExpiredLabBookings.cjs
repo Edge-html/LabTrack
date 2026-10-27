@@ -40,6 +40,8 @@ async function cancelExpiredLabBookings() {
   for (const bookingDoc of snapshot.docs) {
     const didCancel = await db.runTransaction(async transaction => {
       const latest = await transaction.get(bookingDoc.ref);
+      const calendarRef = db.collection('labBookingCalendar').doc(bookingDoc.id);
+      await transaction.get(calendarRef);
       if (!latest.exists) return false;
       const booking = latest.data();
       if (!['pending', 'approved'].includes(booking.status) || !hasExpired(booking, now)) return false;
@@ -48,6 +50,13 @@ async function cancelExpiredLabBookings() {
         cancelledAt: FieldValue.serverTimestamp(),
         cancellationReason: 'Automatically cancelled because the booking time passed.',
         updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.set(calendarRef, {
+        bookingDate: booking.bookingDate,
+        labRoom: booking.labRoom,
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+        status: 'cancelled',
       });
       return true;
     });

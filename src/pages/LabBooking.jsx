@@ -7,13 +7,16 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import {
-  collection, query, where, getDocs, addDoc, serverTimestamp,
+  collection, query, where, getDocs, doc, runTransaction, serverTimestamp,
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, formatTimeOfDay, isValidGradeLevel,
   LAB_ROOMS, timesOverlap, durationLabel, countSchoolDays,
 } from '../lib/helpers';
 import { useLabRooms } from '../hooks/useLabRooms';
+import {
+  LAB_BOOKING_BLOCKING_STATUSES, labBookingCalendarEntry, roomBookingMutexId,
+} from '../lib/labBookings';
 
 export default function LabBooking() {
   const { userProfile } = useAuth();
@@ -65,7 +68,7 @@ export default function LabBooking() {
       try {
         const snap = await getDocs(
           query(
-            collection(db, 'labBookings'),
+            collection(db, 'labBookingCalendar'),
             where('bookingDate', '==', form.bookingDate),
             where('labRoom', '==', form.labRoom)
           )
@@ -137,7 +140,10 @@ export default function LabBooking() {
 
     setSubmitting(true);
     try {
-      await addDoc(collection(db, 'labBookings'), {
+      const bookingRef = doc(collection(db, 'labBookings'));
+      const calendarRef = doc(db, 'labBookingCalendar', bookingRef.id);
+      const mutexRef = doc(db, 'labBookingMutex', roomBookingMutexId(form.bookingDate, form.labRoom));
+      const booking = {
         userId: userProfile.uid,
         studentName: userProfile.name,
         studentId: userProfile.lrn,
@@ -159,6 +165,31 @@ export default function LabBooking() {
         returnedAt: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      };
+
+      await runTransaction(db, async transaction => {
+        const mutexSnap = await transaction.get(mutexRef);
+        const scheduleSnap = await transaction.get(query(
+          collection(db, 'labBookingCalendar'),
+          where('bookingDate', '==', form.bookingDate),
+          where('labRoom', '==', form.labRoom),
+        ));
+        const hasConflict = scheduleSnap.docs.some(item => {
+          const scheduled = item.data();
+          return LAB_BOOKING_BLOCKING_STATUSES.includes(scheduled.status) &&
+            timesOverlap(form.startTime, form.endTime, scheduled.startTime, scheduled.endTime);
+        });
+        if (hasConflict) throw new Error('That time slot was just reserved. Please choose another time.');
+
+        const revision = (Number(mutexSnap.data()?.revision) || 0) + 1;
+        transaction.set(bookingRef, booking);
+        transaction.set(calendarRef, labBookingCalendarEntry(booking));
+        transaction.set(mutexRef, {
+          bookingId: bookingRef.id,
+          bookingDate: form.bookingDate,
+          labRoom: form.labRoom,
+          revision,
+        });
       });
 
       toast.success('Laboratory booking submitted!');

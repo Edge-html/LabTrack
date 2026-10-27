@@ -1,25 +1,60 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Clock3, CheckCircle2, XCircle, AlertTriangle, Maximize2, MessageSquare, X,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { formatTimestamp, timeAgo } from '../lib/helpers';
 import { proofPhotos } from '../lib/upload';
+import { db } from '../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 /**
  * Renders a student's return-proof photo(s) together with the time it was
  * submitted and, when present, the laboratory's assessment.
  *
- * @param {object} request The equipment request document (must carry `returnProof`).
+ * @param {object} request The equipment request document. New proofs are lazily
+ * fetched from `requestProofs/{request.id}` when return-proof metadata exists.
  * @param {'sm'|'md'|'lg'} size
  */
 export default function ReturnProofCard({ request, size = 'md' }) {
   const [lightbox, setLightbox] = useState(null);
-  const proof = request?.returnProof;
+  const [storedProof, setStoredProof] = useState(null);
+  const [loadingProof, setLoadingProof] = useState(false);
+  const [proofError, setProofError] = useState('');
+
+  useEffect(() => {
+    if (!request?.id || request.returnProof || !request.returnProofMeta?.count) {
+      setStoredProof(null);
+      setLoadingProof(false);
+      setProofError('');
+      return undefined;
+    }
+    let active = true;
+    setLoadingProof(true);
+    setProofError('');
+    getDoc(doc(db, 'requestProofs', request.id))
+      .then(snapshot => {
+        if (active) setStoredProof(snapshot.exists() ? snapshot.data() : null);
+      })
+      .catch(error => {
+        console.error('Could not load return proof:', error);
+        if (active) setProofError('Could not load the return photos. Please try again.');
+      })
+      .finally(() => { if (active) setLoadingProof(false); });
+    return () => { active = false; };
+  }, [request?.id, request?.returnProof, request?.returnProofMeta?.count]);
+
+  const proof = request?.returnProof || storedProof;
   const review = request?.returnReview;
   const photos = proofPhotos(proof);
 
-  if (!photos.length) return null;
+  if (loadingProof) return <p className="text-sm text-gray-500">Loading return photos…</p>;
+  if (proofError) return <p role="alert" className="text-sm text-red-600">{proofError}</p>;
+  if (!photos.length) {
+    return request?.returnProofMeta?.count
+      ? <p className="text-sm text-amber-700">The saved proof photo could not be found. Contact the laboratory administrator.</p>
+      : null;
+  }
 
   const open = lightbox != null && photos[lightbox] ? lightbox : null;
   const imgH = size === 'sm' ? 'max-h-40' : size === 'lg' ? 'max-h-[420px]' : 'max-h-64';

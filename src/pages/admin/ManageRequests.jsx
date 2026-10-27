@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   collection, query, onSnapshot, orderBy, limit,
-  runTransaction, doc, getDoc, serverTimestamp, updateDoc, deleteDoc,
+  runTransaction, doc, getDoc, serverTimestamp, updateDoc, writeBatch,
   where, getDocs, increment,
 } from 'firebase/firestore';
 import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
@@ -291,7 +291,10 @@ export default function ManageRequests() {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
     try {
-      await deleteDoc(doc(db, 'requests', deleteTarget.id));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'requests', deleteTarget.id));
+      batch.delete(doc(db, 'requestProofs', deleteTarget.id));
+      await batch.commit();
       setRequests(current => current.filter(request => request.id !== deleteTarget.id));
       toast.success('Equipment request history deleted.');
       setDeleteTarget(null);

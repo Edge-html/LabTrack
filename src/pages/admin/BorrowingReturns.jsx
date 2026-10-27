@@ -14,11 +14,11 @@ import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/
 import { StatusBadge, ConditionBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import ReturnProofCard from '../../components/ReturnProofCard';
-import ProofThumb from '../../components/ProofThumb';
 import { proofPhotos } from '../../lib/upload';
 import { ensureActiveEquipmentReservations, reservationDocumentId } from '../../lib/equipmentReservations';
 
 const ACTIVE_STATUSES = ['approved', 'borrowed', 'return_submitted', 'return_flagged'];
+const hasReturnProof = request => Boolean(request.returnProofMeta?.count || proofPhotos(request.returnProof).length);
 
 /* ── Mark borrowed ────────────────────────────────────────────────────────── */
 
@@ -85,7 +85,7 @@ function ReturnModal({ request, onClose, onConfirm, reason }) {
     request.items?.map(item => ({
       ...item,
       qtyReturned: item.qtyReleased || item.qtyRequested,
-      qtyDamaged: request.returnProof ? (item.qtyDamaged || 0) : 0,
+      qtyDamaged: hasReturnProof(request) ? (item.qtyDamaged || 0) : 0,
       qtyMissing: 0,
       conditionOnReturn: item.conditionOnReturn || 'Good',
     })) || []
@@ -723,13 +723,12 @@ export default function BorrowingReturns() {
                       )}
                     </td>
                     <td data-label="Proof">
-                      {proofPhotos(r.returnProof).length > 0 ? (
+                      {hasReturnProof(r) ? (
                         <button
                           onClick={() => setReviewTarget(r)}
                           className="flex items-center gap-1.5 text-xs font-medium text-crimson hover:text-gold"
                         >
-                          <ProofThumb proof={r.returnProof} />
-                          View
+                          <Camera size={14} /> View {r.returnProofMeta?.count || proofPhotos(r.returnProof).length} photo{(r.returnProofMeta?.count || proofPhotos(r.returnProof).length) === 1 ? '' : 's'}
                         </button>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>

@@ -7,11 +7,15 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
-  collection, query, where, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, limit, getDoc, writeBatch,
+  collection, query, where, getDocs, doc, serverTimestamp, limit, getDoc, writeBatch, runTransaction,
+  orderBy, startAfter,
 } from 'firebase/firestore';
 import {
-  formatDate, formatTimeOfDay, formatTimestamp, timeAgo,
+  formatDate, formatTimeOfDay, formatTimestamp, timeAgo, timesOverlap,
 } from '../../lib/helpers';
+import {
+  LAB_BOOKING_BLOCKING_STATUSES, labBookingCalendarEntry, roomBookingMutexId,
+} from '../../lib/labBookings';
 import { LabStatusBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import BookingTimeline from '../../components/BookingTimeline';
@@ -23,6 +27,7 @@ const STATUS_BY_TAB = [
   ['approved'],
   ['completed', 'rejected', 'cancelled'],
 ];
+const HISTORY_PAGE_SIZE = 100;
 
 /**
  * Approve / reject modal.
@@ -97,7 +102,7 @@ function UseModal({ booking, action, onClose, onConfirm }) {
           {isCheckIn ? <LogIn size={22} /> : <LogOut size={22} />}
         </div>
         <h3 className="font-semibold text-gray-900 mb-1">
-          {isCheckIn ? 'Mark Room as Used' : 'Mark Room as Returned'}
+          {isCheckIn ? 'Mark Room Occupied' : 'Mark Room Done'}
         </h3>
         <p className="text-sm text-gray-500 mb-4">
           {booking.studentName} · {booking.labRoom}
@@ -135,10 +140,13 @@ export default function ManageLabBookings() {
   const [deleting, setDeleting] = useState(false);
   const [historyYear, setHistoryYear] = useState('');
   const [deleteYearTarget, setDeleteYearTarget] = useState('');
+  const [historyCursor, setHistoryCursor] = useState(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
 
   const preId = searchParams.get('id');
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => { load(); }, [tab, historyYear]);
 
   useEffect(() => {
     if (!preId) return;
@@ -150,19 +158,38 @@ export default function ManageLabBookings() {
     })();
   }, [preId]);
 
+  function historyQuery(cursor = null) {
+    const constraints = [
+      where('status', 'in', STATUS_BY_TAB[2]),
+    ];
+    if (historyYear) {
+      constraints.push(
+        where('bookingDate', '>=', `${historyYear}-01-01`),
+        where('bookingDate', '<=', `${historyYear}-12-31`),
+      );
+    }
+    constraints.push(orderBy('bookingDate', 'desc'));
+    if (cursor) constraints.push(startAfter(cursor));
+    constraints.push(limit(HISTORY_PAGE_SIZE));
+    return query(collection(db, 'labBookings'), ...constraints);
+  }
+
   async function load() {
     setLoading(true);
     try {
       const bookingsQuery = tab === 2
-        ? query(collection(db, 'labBookings'), where('status', 'in', STATUS_BY_TAB[tab]))
+        ? historyQuery()
         : query(collection(db, 'labBookings'), where('status', 'in', STATUS_BY_TAB[tab]), limit(300));
       const snap = await getDocs(bookingsQuery);
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      docs.sort((a, b) => {
-        const d = (a.bookingDate || '').localeCompare(b.bookingDate || '');
-        return tab === 2 ? -d : d;
-      });
       setBookings(docs);
+      if (tab === 2) {
+        setHistoryCursor(snap.docs.at(-1) || null);
+        setHasMoreHistory(snap.size === HISTORY_PAGE_SIZE);
+      } else {
+        setHistoryCursor(null);
+        setHasMoreHistory(false);
+      }
     } catch (err) {
       console.error(err);
       toast.error('Failed to load laboratory bookings.');
@@ -171,9 +198,23 @@ export default function ManageLabBookings() {
     }
   }
 
+  async function loadMoreHistory() {
+    if (tab !== 2 || !historyCursor || !hasMoreHistory || loadingMoreHistory) return;
+    setLoadingMoreHistory(true);
+    try {
+      const snap = await getDocs(historyQuery(historyCursor));
+      setBookings(current => [...current, ...snap.docs.map(d => ({ id: d.id, ...d.data() }))]);
+      setHistoryCursor(snap.docs.at(-1) || historyCursor);
+      setHasMoreHistory(snap.size === HISTORY_PAGE_SIZE);
+    } catch (err) {
+      toast.error('Could not load more booking history: ' + err.message);
+    } finally {
+      setLoadingMoreHistory(false);
+    }
+  }
+
   const filtered = bookings.filter(b => {
     const q = search.toLowerCase();
-    if (tab === 2 && historyYear && !b.bookingDate?.startsWith(`${historyYear}-`)) return false;
     return (
       !q ||
       b.studentName?.toLowerCase().includes(q) ||
@@ -182,8 +223,6 @@ export default function ManageLabBookings() {
       (b.labRoom || '').toLowerCase().includes(q)
     );
   });
-
-  const historyYears = [...new Set(bookings.map(b => b.bookingDate?.slice(0, 4)).filter(Boolean))].sort((a, b) => b.localeCompare(a));
 
   async function handleDecision(booking, action, remarks) {
     try {
@@ -202,7 +241,44 @@ export default function ManageLabBookings() {
               rejectedAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             };
-      await updateDoc(doc(db, 'labBookings', booking.id), patch);
+      const bookingRef = doc(db, 'labBookings', booking.id);
+      const calendarRef = doc(db, 'labBookingCalendar', booking.id);
+      const mutexRef = doc(db, 'labBookingMutex', roomBookingMutexId(booking.bookingDate, booking.labRoom));
+      await runTransaction(db, async transaction => {
+        // Serialize admin approvals with student submissions for this room/date.
+        const mutexSnap = await transaction.get(mutexRef);
+        const currentSnap = await transaction.get(bookingRef);
+        if (!currentSnap.exists() || currentSnap.data().status !== 'pending') {
+          throw new Error('This booking is no longer pending. Refresh the page and try again.');
+        }
+        const current = currentSnap.data();
+        const scheduleSnap = await transaction.get(query(
+          collection(db, 'labBookingCalendar'),
+          where('bookingDate', '==', current.bookingDate),
+          where('labRoom', '==', current.labRoom),
+        ));
+        if (action === 'approve') {
+          const conflict = scheduleSnap.docs.find(item => {
+            if (item.id === booking.id) return false;
+            const scheduled = item.data();
+            return LAB_BOOKING_BLOCKING_STATUSES.includes(scheduled.status) &&
+              timesOverlap(current.startTime, current.endTime, scheduled.startTime, scheduled.endTime);
+          });
+          if (conflict) {
+            throw new Error('This room and time now overlap another pending or approved booking. Resolve the conflict before approving.');
+          }
+        }
+
+        const revision = (Number(mutexSnap.data()?.revision) || 0) + 1;
+        transaction.update(bookingRef, patch);
+        transaction.set(calendarRef, labBookingCalendarEntry({ ...current, status: patch.status }));
+        transaction.set(mutexRef, {
+          bookingId: booking.id,
+          bookingDate: current.bookingDate,
+          labRoom: current.labRoom,
+          revision,
+        });
+      });
       toast.success(action === 'approve' ? 'Booking approved.' : 'Booking rejected.');
       setDecision(null);
       load();
@@ -217,8 +293,11 @@ export default function ManageLabBookings() {
         action === 'checkin'
           ? { checkedInAt: serverTimestamp(), updatedAt: serverTimestamp() }
           : { status: 'completed', returnedAt: serverTimestamp(), updatedAt: serverTimestamp() };
-      await updateDoc(doc(db, 'labBookings', booking.id), patch);
-      toast.success(action === 'checkin' ? 'Room marked as in use.' : 'Room marked as returned.');
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'labBookings', booking.id), patch);
+      if (patch.status) batch.update(doc(db, 'labBookingCalendar', booking.id), { status: patch.status });
+      await batch.commit();
+      toast.success(action === 'checkin' ? 'Room marked occupied.' : 'Room marked done.');
       setUseTarget(null);
       load();
     } catch (err) {
@@ -230,9 +309,13 @@ export default function ManageLabBookings() {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
     try {
-      await deleteDoc(doc(db, 'labBookings', deleteTarget.id));
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'labBookings', deleteTarget.id));
+      batch.delete(doc(db, 'labBookingCalendar', deleteTarget.id));
+      await batch.commit();
       setBookings(current => current.filter(booking => booking.id !== deleteTarget.id));
       if (details?.id === deleteTarget.id) setDetails(null);
+      await load();
       toast.success('Booking history deleted.');
       setDeleteTarget(null);
     } catch (err) {
@@ -247,20 +330,31 @@ export default function ManageLabBookings() {
     setDeleting(true);
     try {
       const year = deleteYearTarget;
-      const snap = await getDocs(query(
-        collection(db, 'labBookings'),
-        where('bookingDate', '>=', `${year}-01-01`),
-        where('bookingDate', '<=', `${year}-12-31`),
-      ));
-      const docs = snap.docs.filter(item => STATUS_BY_TAB[2].includes(item.data().status));
-      for (let i = 0; i < docs.length; i += 450) {
+      let deleted = 0;
+      const deletedIds = new Set();
+      // Delete a page at a time; two docs per booking keeps each batch below 500 writes.
+      while (true) {
+        const snap = await getDocs(query(
+          collection(db, 'labBookings'),
+          where('status', 'in', STATUS_BY_TAB[2]),
+          where('bookingDate', '>=', `${year}-01-01`),
+          where('bookingDate', '<=', `${year}-12-31`),
+          orderBy('bookingDate', 'asc'),
+          limit(225),
+        ));
+        if (snap.empty) break;
         const batch = writeBatch(db);
-        docs.slice(i, i + 450).forEach(item => batch.delete(item.ref));
+        snap.docs.forEach(item => {
+          batch.delete(item.ref);
+          batch.delete(doc(db, 'labBookingCalendar', item.id));
+          deletedIds.add(item.id);
+        });
         await batch.commit();
+        deleted += snap.size;
       }
-      const deletedIds = new Set(docs.map(item => item.id));
       setBookings(current => current.filter(booking => !deletedIds.has(booking.id)));
-      toast.success(`Deleted ${docs.length} booking record(s) from ${year}.`);
+      await load();
+      toast.success(`Deleted ${deleted} booking record(s) from ${year}.`);
       setDeleteYearTarget('');
     } catch (err) {
       toast.error('Could not delete that year’s history: ' + err.message);
@@ -323,7 +417,7 @@ export default function ManageLabBookings() {
           <DoorOpen size={18} strokeWidth={1.8} />
           Laboratory Bookings
           <span className="ml-auto text-xs text-gold font-medium">
-            {filtered.length} booking{filtered.length === 1 ? '' : 's'}
+            {filtered.length}{tab === 2 ? ' loaded' : ''} booking{filtered.length === 1 ? '' : 's'}
           </span>
         </div>
 
@@ -331,19 +425,25 @@ export default function ManageLabBookings() {
           <div className="flex flex-wrap gap-2 items-center">
             <div className="relative max-w-xs flex-1 min-w-[200px]">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input className="input pl-9" placeholder="Search student, room, purpose…"
+              <input className="input pl-9" placeholder={tab === 2 ? 'Search loaded history…' : 'Search student, room, purpose…'}
                 value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {tab === 2 && (
               <>
-                <select className="input w-auto min-w-[130px]" value={historyYear} onChange={e => setHistoryYear(e.target.value)} aria-label="Filter booking history by year">
-                  <option value="">All years</option>
-                  {historyYears.map(year => <option key={year} value={year}>{year}</option>)}
-                </select>
+                <input
+                  className="input w-28"
+                  type="number"
+                  min="2000"
+                  max={new Date().getFullYear() + 1}
+                  value={historyYear}
+                  onChange={e => setHistoryYear(e.target.value)}
+                  placeholder="All years"
+                  aria-label="Filter booking history by year"
+                />
                 <button
                   type="button"
                   onClick={() => setDeleteYearTarget(historyYear)}
-                  disabled={!historyYear || !bookings.some(b => b.bookingDate?.startsWith(`${historyYear}-`))}
+                  disabled={!/^\d{4}$/.test(historyYear) || !bookings.some(b => b.bookingDate?.startsWith(`${historyYear}-`))}
                   className="btn-danger btn-sm"
                 >Delete {historyYear || 'year'} history</button>
               </>
@@ -459,6 +559,13 @@ export default function ManageLabBookings() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {tab === 2 && hasMoreHistory && !loading && (
+          <div className="p-4 border-t border-gray-100 text-center">
+            <button className="btn-secondary btn-sm" onClick={loadMoreHistory} disabled={loadingMoreHistory}>
+              {loadingMoreHistory ? 'Loading…' : 'Load more history'}
+            </button>
           </div>
         )}
       </div>

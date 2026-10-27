@@ -58,6 +58,22 @@
       ]
     },
     {
+      "collectionGroup": "labBookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "bookingDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "labBookingCalendar",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "bookingDate", "order": "ASCENDING" },
+        { "fieldPath": "labRoom", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "equipmentReservations",
       "queryScope": "COLLECTION",
       "fields": [
