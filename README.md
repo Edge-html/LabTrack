@@ -89,9 +89,9 @@ firebase deploy --only firestore:rules,firestore:indexes
 ### 5. Authentication email branding and student LRNs
 
 - New student accounts require a unique 12-digit LRN and an email verification link.
-- In **Firebase Console → Authentication → Templates**, set the email verification and password reset sender/subject text to LabTrack.
-- For the password reset template, set the subject to **Reset your password for LabTrack** and make the action link display as **Reset your password here**. The app returns students to the LabTrack sign-in page after the Firebase action completes.
-- In **Project settings → General**, set the public-facing project name to **LabTrack** so Firebase’s default template does not use the project ID.
+- In **Firebase Console → Authentication → Templates**, set the email verification and password reset sender/subject text to LabTrack. For password reset, set the subject to **Reset your password for LabTrack**. The app returns students to the LabTrack sign-in page after the Firebase action completes.
+- In **Project settings → General**, set the public-facing project name to **LabTrack** so Firebase’s default template uses the app name instead of the project ID.
+- Firebase's built-in template does not offer a control for replacing the long action URL with custom clickable text. To show a short label such as **Reset your password here**, use a custom email sender/template and generate the secure reset link with the Firebase Admin SDK. The built-in template can still be branded with its available subject and message fields.
 - Existing student profiles need their LRN added by an administrator in **Admin Settings → Users & Roles** before they can submit new requests or bookings. The admin editor reserves the LRN uniquely.
 
 ### 6. Scheduled cancellation of expired room bookings
