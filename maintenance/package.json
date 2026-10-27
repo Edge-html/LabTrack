@@ -1,0 +1,11 @@
+{
+  "name": "labtrack-maintenance",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "12.7.0"
+  }
+}

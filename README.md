@@ -83,7 +83,7 @@ Some queries need composite indexes. Deploy them all at once with the Firebase C
 npm install -g firebase-tools
 firebase login
 firebase use --add                          # select your project
-firebase deploy --only firestore:rules,firestore:indexes
+firebase deploy --only firestore
 ```
 
 ### 5. Authentication email branding and student LRNs
@@ -94,16 +94,20 @@ firebase deploy --only firestore:rules,firestore:indexes
 - Firebase's built-in template does not offer a control for replacing the long action URL with custom clickable text. To show a short label such as **Reset your password here**, use a custom email sender/template and generate the secure reset link with the Firebase Admin SDK. The built-in template can still be branded with its available subject and message fields.
 - Existing student profiles need their LRN added by an administrator in **Admin Settings → Users & Roles** before they can submit new requests or bookings. The admin editor reserves the LRN uniquely.
 
-### 6. Scheduled cancellation of expired room bookings
+### 6. Free scheduled cancellation of expired room bookings
 
-The scheduled cancellation task runs every 15 minutes in Asia/Manila and cancels pending or approved bookings after their end time if they were not checked in. Deploying scheduled Cloud Functions requires billing to be enabled on the Firebase project.
+Expired bookings are checked by a GitHub Actions workflow every 15 minutes. It uses the Firebase Admin SDK from GitHub-hosted runners, so it does not require deploying a Cloud Function or upgrading Firebase to Blaze. This repository is public, so its standard GitHub-hosted Actions runs are free. GitHub may delay scheduled runs, and automatically pauses schedules on public repositories after 60 days without repository activity.
 
-```bash
-npm install --prefix functions
-firebase deploy --only functions
-```
+One-time setup:
 
-The client’s production build does not deploy Firestore rules, indexes, Authentication email templates, or Cloud Functions. Deploy those Firebase resources separately after configuring the project.
+1. In Firebase Console → **Project settings → Service accounts**, generate a private key for the Firebase Admin SDK. Store the downloaded JSON key securely.
+2. In the Google Cloud Console for the same project, grant that service account the **Cloud Datastore User** role so it can read and update Firestore bookings.
+3. On GitHub, open **Edge-html/LabTrack → Settings → Secrets and variables → Actions → New repository secret**. Name it `FIREBASE_SERVICE_ACCOUNT_JSON` and paste the entire service-account JSON file as its value. Never commit the key to the repository.
+4. Open the repository’s **Actions** tab and enable workflows if GitHub asks. Select **Cancel expired lab bookings → Run workflow** to perform the first run manually, then verify the run succeeds. The workflow also runs automatically every 15 minutes.
+
+The key is used only by the scheduled workflow. Keep repository write access limited to trusted maintainers because they can change workflow code that reads repository secrets. Firebase Firestore usage remains subject to the Spark plan’s free quotas.
+
+The app’s production build does not deploy Firestore rules or indexes, or change Authentication email templates. Deploy rules and indexes separately with `firebase deploy --only firestore` after selecting the correct Firebase project.
 
 > **Cloud Storage is NOT used.** This project runs on the Firebase **Spark** (free) plan,
 > which does not include Cloud Storage — only the Blaze plan does. Return-proof photos are
@@ -328,7 +332,8 @@ This seeds:
 - [ ] Firebase: Enable Email/Password authentication
 - [ ] Firebase: Create Firestore database (production mode, asia-southeast1)
 - [ ] Firebase: Paste and publish `firestore.rules`
-- [ ] Firebase CLI: `firebase deploy --only firestore:rules,firestore:indexes`
+- [ ] Firebase CLI: `firebase deploy --only firestore`
+- [ ] GitHub: add the `FIREBASE_SERVICE_ACCOUNT_JSON` Actions secret and run the booking cleanup workflow
 - [ ] App: Sign up, then set your `role` to `"admin"` in Firestore
 - [ ] Vercel: Import repo, add all `VITE_FIREBASE_*` env vars, deploy
 - [ ] Firebase: Add Vercel domain to Authorized Domains
