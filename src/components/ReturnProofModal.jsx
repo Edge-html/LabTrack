@@ -128,7 +128,7 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
                 {request.returnReview?.remarks || 'The equipment was assessed as damaged or not properly cleaned.'}
               </p>
               <p className="mt-1 font-medium">
-                Please clean and repair the equipment, then upload new photos — or report directly to the laboratory.
+              Please clean and repair the equipment, then capture new camera photos — or report directly to the laboratory.
               </p>
             </div>
           </div>
@@ -148,14 +148,14 @@ export default function ReturnProofModal({ request, onClose, onDone }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">
-              Photo Proof * <span className="text-gray-400 font-normal">(up to {MAX_PROOF_PHOTOS} photos)</span>
+              Live Camera Proof * <span className="text-gray-400 font-normal">(up to {MAX_PROOF_PHOTOS} photos)</span>
             </label>
             <PhotoUpload
               files={files}
               previews={previews}
               onChange={next => { setFiles(next || []); setError(''); }}
               disabled={busy}
-              hint="Take clear photos of the cleaned equipment on the lab table"
+              hint="Use your device camera to photograph the cleaned equipment on the lab table"
             />
           </div>
 

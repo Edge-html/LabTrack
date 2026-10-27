@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle, Search,
+  ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle,
   Calendar, User, BookOpen, Clock, Camera,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import EquipmentPicker from '../components/EquipmentPicker';
+import { hasReservationOverlap, reservationWindow } from '../lib/equipmentReservations';
 import { db } from '../lib/firebase';
 import {
-  collection, getDocs, addDoc, serverTimestamp,
-  query, orderBy, doc, getDoc,
+  collection, getDocs, addDoc, serverTimestamp, onSnapshot,
+  query, orderBy, where, doc, getDoc,
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, addDays, durationToDays,
@@ -17,7 +19,6 @@ import {
 } from '../lib/helpers';
 
 const EMPTY_LINE = { equipmentId: '', name: '', qtyRequested: 1 };
-const LAB_GROUPS = ['Physics Lab', 'Biochem Lab', 'Unassigned'];
 
 export default function RequestEquipment() {
   const { userProfile } = useAuth();
@@ -26,18 +27,21 @@ export default function RequestEquipment() {
   const today = getTodayManila();
 
   const [equipment, setEquipment] = useState([]);
+  const [reservations, setReservations] = useState([]);
+  const [reservationsReady, setReservationsReady] = useState(false);
+  const [reservationError, setReservationError] = useState(false);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [equipmentSearch, setEquipmentSearch] = useState('');
-  const [equipmentLabFilter, setEquipmentLabFilter] = useState('');
 
   const [form, setForm] = useState({
     requestDate: today,
     experimentDate: '',
+    proposedBorrowTime: '08:00',
     duration: '1 day',
     customDays: '',
     expectedReturnDate: '',
+    expectedReturnTime: '12:00',
     teacher: '',
     experiment: '',
   });
@@ -61,6 +65,20 @@ export default function RequestEquipment() {
     }
     load();
   }, []);
+
+  useEffect(() => onSnapshot(
+    query(collection(db, 'equipmentReservations'), where('status', '==', 'active')),
+    snapshot => {
+      setReservations(snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+      setReservationsReady(true);
+      setReservationError(false);
+    },
+    err => {
+      console.error('Could not load equipment reservations:', err);
+      setReservationsReady(true);
+      setReservationError(true);
+    },
+  ), []);
 
   async function safeGetDoc(col, id) {
     try {
@@ -118,17 +136,43 @@ export default function RequestEquipment() {
     return equipment.find(e => e.id === id);
   }
 
+  function getAvailableForWindow(id) {
+    const item = getEquipmentAvail(id);
+    if (!item) return 0;
+    const window = reservationWindow(form);
+    if (!window) return item.availableQty || 0;
+    const itemReservations = reservations.filter(reservation => reservation.equipmentId === id && reservation.status === 'active');
+    const reservedTotal = itemReservations.reduce((sum, reservation) => sum + (Number(reservation.qty) || 0), 0);
+    const reservedOverlap = itemReservations
+      .filter(reservation => hasReservationOverlap(window, reservation))
+      .reduce((sum, reservation) => sum + (Number(reservation.qty) || 0), 0);
+    const legacyHeld = Math.max(0, (Number(item.totalQty) || 0) - (Number(item.availableQty) || 0) - reservedTotal);
+    return Math.max(0, (Number(item.totalQty) || 0) - reservedOverlap - legacyHeld);
+  }
+
   function validate() {
     const errs = {};
     if (!form.teacher.trim()) errs.teacher = 'Teacher name is required.';
     if (!form.experiment.trim()) errs.experiment = 'Experiment/activity name is required.';
     if (!form.experimentDate) errs.experimentDate = 'Experiment date is required.';
+    if (!form.proposedBorrowTime) errs.proposedBorrowTime = 'Proposed borrow time is required.';
     if (!form.expectedReturnDate) errs.expectedReturnDate = 'Expected return date is required.';
+    if (form.experimentDate && form.expectedReturnDate && form.expectedReturnDate < form.experimentDate) {
+      errs.expectedReturnDate = 'Expected return must be on or after the experiment date.';
+    }
+    if (!form.expectedReturnTime) errs.expectedReturnTime = 'Expected return time is required.';
+    if (form.experimentDate === form.expectedReturnDate && form.proposedBorrowTime && form.expectedReturnTime <= form.proposedBorrowTime) {
+      errs.expectedReturnTime = 'Return time must be after the proposed borrow time.';
+    }
     const lErrs = lines.map(l => {
       if (!l.equipmentId) return 'Select equipment.';
       const eq = getEquipmentAvail(l.equipmentId);
       if (!eq) return 'Equipment not found.';
       if (!l.qtyRequested || l.qtyRequested < 1) return 'Quantity must be at least 1.';
+      if (reservationError) return 'Could not verify whether this equipment is already booked.';
+      if (reservationsReady && form.experimentDate && form.expectedReturnDate && Number(l.qtyRequested) > getAvailableForWindow(l.equipmentId)) {
+        return `Only ${getAvailableForWindow(l.equipmentId)} available for these dates and times.`;
+      }
       return null;
     });
     return { formErrs: errs, lineErrs: lErrs };
@@ -137,6 +181,10 @@ export default function RequestEquipment() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (restricted) return;
+    if (!reservationsReady || reservationError) {
+      toast.error('Equipment availability could not be verified. Please wait or reload and try again.');
+      return;
+    }
 
     if (!isValidGradeLevel(userProfile?.gradeLevel)) {
       toast.error('Only Grade 11 and Grade 12 students are permitted to submit laboratory requests.');
@@ -151,10 +199,10 @@ export default function RequestEquipment() {
     // Check insufficient stock
     const insufficientLine = lines.find(l => {
       const eq = getEquipmentAvail(l.equipmentId);
-      return eq && parseInt(l.qtyRequested) > eq.availableQty;
+      return eq && parseInt(l.qtyRequested) > getAvailableForWindow(l.equipmentId);
     });
     if (insufficientLine) {
-      toast.error('Please fix insufficient equipment errors before submitting.');
+      toast.error('That equipment is already booked for overlapping dates or times. Reduce the quantity or choose another time.');
       return;
     }
 
@@ -179,14 +227,17 @@ export default function RequestEquipment() {
       await addDoc(collection(db, 'requests'), {
         userId: userProfile.uid,
         borrowerName: userProfile.name,
+        studentId: userProfile.lrn || '',
         gradeLevel: userProfile.gradeLevel,
         section: userProfile.section,
         teacher: form.teacher.trim(),
         experiment: form.experiment.trim(),
         experimentDate: form.experimentDate,
+        proposedBorrowTime: form.proposedBorrowTime,
         requestDate: form.requestDate,
         duration: form.duration === 'Custom' ? `${form.customDays} days` : form.duration,
         expectedReturnDate: form.expectedReturnDate,
+        expectedReturnTime: form.expectedReturnTime,
         actualReturnDate: null,
         releaseDate: null,
         status: 'pending',
@@ -300,6 +351,16 @@ export default function RequestEquipment() {
               {formErrors.experimentDate && <p className="text-xs text-red-600 mt-1">{formErrors.experimentDate}</p>}
             </div>
             <div>
+              <label className="label">Proposed Borrow Time *</label>
+              <input
+                type="time"
+                className={`input ${formErrors.proposedBorrowTime ? 'input-error' : ''}`}
+                value={form.proposedBorrowTime}
+                onChange={e => setField('proposedBorrowTime', e.target.value)}
+              />
+              {formErrors.proposedBorrowTime && <p className="text-xs text-red-600 mt-1">{formErrors.proposedBorrowTime}</p>}
+            </div>
+            <div>
               <label className="label">Estimated Borrowing Duration</label>
               <select className="input" value={form.duration} onChange={e => setField('duration', e.target.value)}>
                 {DURATION_OPTIONS.map(d => <option key={d}>{d}</option>)}
@@ -326,6 +387,16 @@ export default function RequestEquipment() {
               />
               {formErrors.expectedReturnDate && <p className="text-xs text-red-600 mt-1">{formErrors.expectedReturnDate}</p>}
             </div>
+            <div>
+              <label className="label">Expected Return Time *</label>
+              <input
+                type="time"
+                className={`input ${formErrors.expectedReturnTime ? 'input-error' : ''}`}
+                value={form.expectedReturnTime}
+                onChange={e => setField('expectedReturnTime', e.target.value)}
+              />
+              {formErrors.expectedReturnTime && <p className="text-xs text-red-600 mt-1">{formErrors.expectedReturnTime}</p>}
+            </div>
           </div>
 
           {/* Equipment lines */}
@@ -336,63 +407,28 @@ export default function RequestEquipment() {
                 <Plus size={14} /> Add Item
               </button>
             </div>
-            <div className="flex flex-wrap gap-2 mb-3">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  className="input pl-9"
-                  type="search"
-                  placeholder="Search equipment by name or category…"
-                  value={equipmentSearch}
-                  onChange={e => setEquipmentSearch(e.target.value)}
-                  aria-label="Search equipment"
-                />
-              </div>
-              <select
-                className="input w-auto min-w-[170px]"
-                value={equipmentLabFilter}
-                onChange={e => setEquipmentLabFilter(e.target.value)}
-                aria-label="Filter equipment by laboratory"
-              >
-                <option value="">All Laboratories</option>
-                {LAB_GROUPS.map(lab => <option key={lab} value={lab}>{lab}</option>)}
-              </select>
-            </div>
+            {reservationError && (
+              <p role="alert" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                The equipment schedule could not be loaded, so requests are paused until availability can be verified.
+              </p>
+            )}
+            {!reservationsReady && (
+              <p className="mb-3 text-xs text-gray-500">Loading equipment booking availability…</p>
+            )}
             <div className="space-y-2">
               {lines.map((line, i) => {
                 const eq = getEquipmentAvail(line.equipmentId);
-                const insufficient = eq && parseInt(line.qtyRequested) > eq.availableQty;
-                const q = equipmentSearch.trim().toLowerCase();
-                const lineEquipment = equipment.filter(item => {
-                  const lab = item.lab || 'Unassigned';
-                  const matchesSearch = !q || item.name?.toLowerCase().includes(q) || item.category?.toLowerCase().includes(q);
-                  const matchesLab = !equipmentLabFilter || lab === equipmentLabFilter;
-                  return (matchesSearch && matchesLab) || item.id === line.equipmentId;
-                });
-                const groups = [...new Set([...LAB_GROUPS, ...lineEquipment.map(item => item.lab || 'Unassigned')])];
+                const availableForWindow = eq ? getAvailableForWindow(line.equipmentId) : 0;
+                const insufficient = eq && reservationsReady && parseInt(line.qtyRequested) > availableForWindow;
                 return (
                   <div key={i} className="flex flex-wrap gap-2 items-start p-3 bg-gray-50 rounded-xl">
                     <div className="flex-[2] min-w-[140px]">
-                      <select
-                        className={`input text-sm ${lineErrors[i] ? 'input-error' : ''}`}
+                      <EquipmentPicker
+                        equipment={equipment.filter(item => !lines.some((other, otherIndex) => otherIndex !== i && other.equipmentId === item.id))}
                         value={line.equipmentId}
-                        onChange={e => setLine(i, 'equipmentId', e.target.value)}
-                      >
-                        <option value="">Select equipment</option>
-                        {lineEquipment.length === 0 && <option value="" disabled>No equipment matches your search</option>}
-                        {groups.map(lab => {
-                          const items = lineEquipment.filter(item => (item.lab || 'Unassigned') === lab);
-                          return items.length ? (
-                            <optgroup key={lab} label={lab}>
-                              {items.map(item => (
-                                <option key={item.id} value={item.id}>
-                                  [{lab}] {item.name} · {item.category} (available: {item.availableQty})
-                                </option>
-                              ))}
-                            </optgroup>
-                          ) : null;
-                        })}
-                      </select>
+                        onChange={value => setLine(i, 'equipmentId', value)}
+                        invalid={!!lineErrors[i]}
+                      />
                       {lineErrors[i] && <p className="text-xs text-red-600 mt-1">{lineErrors[i]}</p>}
                     </div>
                     <div className="flex-1 min-w-[80px]">
@@ -406,7 +442,7 @@ export default function RequestEquipment() {
                     {insufficient && (
                       <div className="w-full flex items-center gap-1.5 text-xs text-red-600">
                         <AlertCircle size={13} />
-                        Insufficient equipment available. (Available: {eq.availableQty})
+                        Equipment is booked/borrowed during this window. Available for the selected dates and times: {availableForWindow}.
                       </div>
                     )}
                     {lines.length > 1 && (
@@ -424,8 +460,8 @@ export default function RequestEquipment() {
             type="submit"
             disabled={submitting || lines.some((l, i) => {
               const eq = getEquipmentAvail(l.equipmentId);
-              return eq && parseInt(l.qtyRequested) > eq.availableQty;
-            })}
+              return eq && reservationsReady && parseInt(l.qtyRequested) > getAvailableForWindow(l.equipmentId);
+            }) || !reservationsReady || reservationError}
             className="btn-primary w-full justify-center"
           >
             <ClipboardList size={16} />

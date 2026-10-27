@@ -86,6 +86,25 @@ firebase use --add                          # select your project
 firebase deploy --only firestore:rules,firestore:indexes
 ```
 
+### 5. Authentication email branding and student LRNs
+
+- New student accounts require a unique 12-digit LRN and an email verification link.
+- In **Firebase Console → Authentication → Templates**, set the email verification and password reset sender/subject text to LabTrack.
+- For the password reset template, set the subject to **Reset your password for LabTrack** and make the action link display as **Reset your password here**. The app returns students to the LabTrack sign-in page after the Firebase action completes.
+- In **Project settings → General**, set the public-facing project name to **LabTrack** so Firebase’s default template does not use the project ID.
+- Existing student profiles need their LRN added by an administrator in **Admin Settings → Users & Roles** before they can submit new requests or bookings. The admin editor reserves the LRN uniquely.
+
+### 6. Scheduled cancellation of expired room bookings
+
+The scheduled cancellation task runs every 15 minutes in Asia/Manila and cancels pending or approved bookings after their end time if they were not checked in. Deploying scheduled Cloud Functions requires billing to be enabled on the Firebase project.
+
+```bash
+npm install --prefix functions
+firebase deploy --only functions
+```
+
+The client’s production build does not deploy Firestore rules, indexes, Authentication email templates, or Cloud Functions. Deploy those Firebase resources separately after configuring the project.
+
 > **Cloud Storage is NOT used.** This project runs on the Firebase **Spark** (free) plan,
 > which does not include Cloud Storage — only the Blaze plan does. Return-proof photos are
 > downscaled in the browser and stored as base64 data URLs directly on the request document

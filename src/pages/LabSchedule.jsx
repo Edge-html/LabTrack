@@ -11,6 +11,7 @@ import {
   getTodayManila, addDays, formatDate, formatTimeOfDay,
   minutesOfDay, toTimeString, LAB_ROOMS, isValidGradeLevel,
 } from '../lib/helpers';
+import { useLabRooms } from '../hooks/useLabRooms';
 
 /** Visible span of the day on the grid. */
 const DAY_START = 7 * 60;  // 7:00 AM
@@ -70,6 +71,7 @@ function layoutDay(events) {
 export default function LabSchedule() {
   const { userProfile, isAdmin } = useAuth();
   const toast = useToast();
+  const { rooms } = useLabRooms();
 
   const [weekStart, setWeekStart] = useState(() => startOfWeek(getTodayManila()));
   const [roomId, setRoomId] = useState(LAB_ROOMS[0].id);
@@ -83,6 +85,10 @@ export default function LabSchedule() {
   );
   const weekEnd = weekDays[6];
   const today = getTodayManila();
+
+  useEffect(() => {
+    if (rooms.length && !rooms.some(room => room.id === roomId)) setRoomId(rooms[0].id);
+  }, [rooms, roomId]);
 
   useEffect(() => { load(); }, [weekStart]);
 
@@ -129,7 +135,7 @@ export default function LabSchedule() {
     return map;
   }, [roomBookings, weekDays]);
 
-  const roomLabel = LAB_ROOMS.find(r => r.id === roomId)?.id || roomId;
+  const roomLabel = rooms.find(r => r.id === roomId)?.id || roomId;
   const canBook = isValidGradeLevel(userProfile?.gradeLevel);
   const isCurrentWeek = weekStart === startOfWeek(today);
 
@@ -171,7 +177,7 @@ export default function LabSchedule() {
 
           {/* Room switch */}
           <div className="ml-auto flex gap-1 bg-gray-100 rounded-xl p-1">
-            {LAB_ROOMS.map(r => (
+            {rooms.map(r => (
               <button
                 key={r.id}
                 onClick={() => { setRoomId(r.id); setSelected(null); }}

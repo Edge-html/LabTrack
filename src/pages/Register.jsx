@@ -12,7 +12,7 @@ export default function Register() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
-    name: '', email: '', password: '', confirmPassword: '',
+    name: '', email: '', lrn: '', password: '', confirmPassword: '',
     gradeLevel: '', section: '',
   });
   const [showPw, setShowPw] = useState(false);
@@ -24,6 +24,7 @@ export default function Register() {
     const errs = {};
     if (!form.name.trim()) errs.name = 'Full name is required.';
     if (!form.email) errs.email = 'Email is required.';
+    if (!/^\d{12}$/.test(form.lrn)) errs.lrn = 'Enter the student’s 12-digit LRN.';
     if (!form.gradeLevel || !isValidGradeLevel(form.gradeLevel)) {
       errs.gradeLevel = 'Please select Grade 11 or Grade 12.';
     }
@@ -42,14 +43,15 @@ export default function Register() {
 
     setLoading(true);
     try {
-      await register({
+      const result = await register({
         name: form.name.trim(),
         email: form.email,
         password: form.password,
+        lrn: form.lrn,
         gradeLevel: form.gradeLevel,
         section: form.section.trim(),
       });
-      navigate('/', { replace: true });
+      navigate('/verify-email', { replace: true, state: { verificationSent: result?.verificationSent !== false } });
     } catch (err) {
       setError(parseFirebaseError(err));
     } finally {
@@ -124,6 +126,23 @@ export default function Register() {
                   />
                 </div>
                 {fieldErrors.email && <p className="text-xs text-red-600 mt-1">{fieldErrors.email}</p>}
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="label" htmlFor="reg-lrn">Learner Reference Number (LRN)</label>
+                <input
+                  id="reg-lrn"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={12}
+                  value={form.lrn}
+                  onChange={e => setField('lrn', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                  className={`input ${fieldErrors.lrn ? 'input-error' : ''}`}
+                  placeholder="12-digit LRN"
+                  required
+                />
+                {fieldErrors.lrn && <p className="text-xs text-red-600 mt-1">{fieldErrors.lrn}</p>}
               </div>
 
               <div>

@@ -10,12 +10,13 @@ import { db } from '../../lib/firebase';
 import {
   collection, query, onSnapshot, orderBy, limit,
   runTransaction, doc, getDoc, serverTimestamp, updateDoc, deleteDoc,
-  where, getDocs,
+  where, getDocs, increment,
 } from 'firebase/firestore';
 import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TableSkeleton } from '../../components/LoadingSpinner';
+import { ensureActiveEquipmentReservations, hasReservationOverlap, reservationDocumentId, reservationWindow } from '../../lib/equipmentReservations';
 
 const TABS = ['Pending', 'All Requests'];
 const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'return_submitted', 'return_flagged', 'returned'];
@@ -164,28 +165,57 @@ export default function ManageRequests() {
 
   async function handleApprove(request, adjustedItems, remarks) {
     try {
+      await ensureActiveEquipmentReservations(db);
+      const allocationMap = new Map();
+      adjustedItems.forEach(item => {
+        const current = allocationMap.get(item.equipmentId) || { equipmentId: item.equipmentId, name: item.name, qty: 0 };
+        current.qty += Number(item.qtyApproved || item.qtyRequested || 0);
+        allocationMap.set(item.equipmentId, current);
+      });
+      const allocations = [...allocationMap.values()];
+      const window = reservationWindow(request);
+      if (!window) throw new Error('The request is missing its proposed borrow or return schedule.');
       await runTransaction(db, async (tx) => {
-        // Firestore requires every read to finish before the first write,
-        // so collect all equipment snapshots up front.
-        const eqRefs = adjustedItems.map(item => doc(db, 'equipment', item.equipmentId));
+        const eqRefs = allocations.map(item => doc(db, 'equipment', item.equipmentId));
         const eqSnaps = [];
         for (const ref of eqRefs) {
           eqSnaps.push(await tx.get(ref));
         }
+        const reservationQueries = allocations.map(item => query(
+          collection(db, 'equipmentReservations'),
+          where('equipmentId', '==', item.equipmentId),
+          where('status', '==', 'active'),
+        ));
+        const reservationSnaps = [];
+        for (const reservationQuery of reservationQueries) reservationSnaps.push(await tx.get(reservationQuery));
 
-        // Validate before mutating anything.
-        adjustedItems.forEach((item, i) => {
+        allocations.forEach((item, i) => {
           if (!eqSnaps[i].exists()) throw new Error(`Equipment "${item.name}" not found.`);
-          const avail = eqSnaps[i].data().availableQty;
-          const qty = item.qtyApproved || item.qtyRequested;
-          if (avail < qty) throw new Error(`Insufficient stock for "${item.name}". Available: ${avail}`);
+          const inventory = eqSnaps[i].data();
+          const activeReservations = reservationSnaps[i].docs.map(snapshot => snapshot.data());
+          const reservedTotal = activeReservations.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+          const reservedOverlap = activeReservations
+            .filter(entry => entry.requestId !== request.id && hasReservationOverlap(window, entry))
+            .reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+          const legacyHeld = Math.max(0, (Number(inventory.totalQty) || 0) - (Number(inventory.availableQty) || 0) - reservedTotal);
+          const availableForWindow = Math.max(0, (Number(inventory.totalQty) || 0) - reservedOverlap - legacyHeld);
+          if (item.qty > availableForWindow) {
+            throw new Error(`"${item.name}" has only ${availableForWindow} available for these dates and times. Another reservation overlaps this request.`);
+          }
         });
 
-        // Now the writes.
-        adjustedItems.forEach((item, i) => {
-          const avail = eqSnaps[i].data().availableQty;
-          const qty = item.qtyApproved || item.qtyRequested;
-          tx.update(eqRefs[i], { availableQty: avail - qty, updatedAt: serverTimestamp() });
+        allocations.forEach((item, i) => {
+          const reservationId = reservationDocumentId(request.id, item.equipmentId);
+          tx.set(doc(db, 'equipmentReservations', reservationId), {
+            equipmentId: item.equipmentId,
+            requestId: request.id,
+            qty: item.qty,
+            ...window,
+            status: 'active',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          tx.update(eqRefs[i], { reservationRevision: increment(1), updatedAt: serverTimestamp() });
         });
 
         const reqRef = doc(db, 'requests', request.id);
@@ -194,6 +224,7 @@ export default function ManageRequests() {
           staffRemarks: remarks,
           approvedAt: serverTimestamp(),
           approvedBy: userProfile?.name || 'Laboratory Staff',
+          inventoryDeductedAtApproval: false,
           items: adjustedItems.map(item => ({
             ...item,
             qtyRequested: item.qtyApproved || item.qtyRequested,
@@ -214,18 +245,27 @@ export default function ManageRequests() {
       if (request.status === 'approved') {
         await runTransaction(db, async (tx) => {
           const items = request.items || [];
-          const eqRefs = items.map(item => doc(db, 'equipment', item.equipmentId));
+          const quantities = new Map();
+          items.forEach(item => quantities.set(item.equipmentId, (quantities.get(item.equipmentId) || 0) + Number(item.qtyRequested || 0)));
+          const equipmentIds = [...quantities.keys()];
+          const eqRefs = equipmentIds.map(id => doc(db, 'equipment', id));
+          const reservationRefs = equipmentIds.map(id => doc(db, 'equipmentReservations', reservationDocumentId(request.id, id)));
           const eqSnaps = [];
           for (const ref of eqRefs) {
             eqSnaps.push(await tx.get(ref)); // all reads first
           }
+          const reservationSnaps = [];
+          for (const ref of reservationRefs) reservationSnaps.push(await tx.get(ref));
           eqSnaps.forEach((snap, i) => {
-            if (snap.exists()) {
+            if (snap.exists() && request.inventoryDeductedAtApproval !== false) {
               tx.update(eqRefs[i], {
-                availableQty: snap.data().availableQty + (items[i].qtyRequested || 0),
+                availableQty: snap.data().availableQty + quantities.get(equipmentIds[i]),
                 updatedAt: serverTimestamp(),
               });
             }
+          });
+          reservationSnaps.forEach((snap, i) => {
+            if (snap.exists()) tx.update(reservationRefs[i], { status: 'released', updatedAt: serverTimestamp() });
           });
           tx.update(doc(db, 'requests', request.id), {
             status: 'rejected',
@@ -350,7 +390,10 @@ export default function ManageRequests() {
                         )}
                       </div>
                     </td>
-                    <td data-label="Exp. Date">{formatDate(r.experimentDate)}</td>
+                    <td data-label="Exp. Date">
+                      <p>{formatDate(r.experimentDate)}</p>
+                      <p className="text-xs text-gray-500">{r.proposedBorrowTime || '08:00'} – {formatDate(r.expectedReturnDate)} {r.expectedReturnTime || '12:00'}</p>
+                    </td>
                     <td data-label="Requested">
                       <p className="text-sm">{formatTimestamp(r.createdAt)}</p>
                       <p className="text-xs text-gray-400">{timeAgo(r.createdAt)}</p>

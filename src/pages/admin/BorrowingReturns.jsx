@@ -16,6 +16,7 @@ import { TableSkeleton } from '../../components/LoadingSpinner';
 import ReturnProofCard from '../../components/ReturnProofCard';
 import ProofThumb from '../../components/ProofThumb';
 import { proofPhotos } from '../../lib/upload';
+import { ensureActiveEquipmentReservations, reservationDocumentId } from '../../lib/equipmentReservations';
 
 const ACTIVE_STATUSES = ['approved', 'borrowed', 'return_submitted', 'return_flagged'];
 
@@ -444,26 +445,47 @@ export default function BorrowingReturns() {
 
   async function handleMarkBorrowed(request, releaseDate, items) {
     try {
+      await ensureActiveEquipmentReservations(db);
       await runTransaction(db, async (tx) => {
-        // All reads must complete before the first write.
-        const eqRefs = items.map(item => doc(db, 'equipment', item.equipmentId));
+        const allocations = new Map();
+        items.forEach(item => {
+          const current = allocations.get(item.equipmentId) || { requested: 0, released: 0 };
+          current.requested += Number(item.qtyRequested || 0);
+          current.released += Number(item.qtyReleased || 0);
+          allocations.set(item.equipmentId, current);
+        });
+        const equipmentIds = [...allocations.keys()];
+        const eqRefs = equipmentIds.map(id => doc(db, 'equipment', id));
+        const reservationRefs = equipmentIds.map(id => doc(db, 'equipmentReservations', reservationDocumentId(request.id, id)));
         const eqSnaps = [];
         for (const ref of eqRefs) {
           eqSnaps.push(await tx.get(ref));
         }
+        const reservationSnaps = [];
+        for (const ref of reservationRefs) reservationSnaps.push(await tx.get(ref));
+
         eqSnaps.forEach((snap, i) => {
           if (!snap.exists()) return;
-          // If released < approved, return the difference
-          const diff = (items[i].qtyRequested || 0) - (items[i].qtyReleased || 0);
-          if (diff > 0) {
-            tx.update(eqRefs[i], {
-              availableQty: snap.data().availableQty + diff,
-              updatedAt: serverTimestamp(),
-            });
+          const allocation = allocations.get(equipmentIds[i]);
+          if (request.inventoryDeductedAtApproval === false) {
+            if (snap.data().availableQty < allocation.released) {
+              throw new Error(`Only ${snap.data().availableQty} ${snap.data().name || 'unit(s)'} are currently available to release.`);
+            }
+            tx.update(eqRefs[i], { availableQty: snap.data().availableQty - allocation.released, updatedAt: serverTimestamp() });
+          } else {
+            const difference = allocation.requested - allocation.released;
+            if (difference > 0) tx.update(eqRefs[i], { availableQty: snap.data().availableQty + difference, updatedAt: serverTimestamp() });
           }
+        });
+        reservationSnaps.forEach((snap, i) => {
+          if (snap.exists()) tx.update(reservationRefs[i], {
+            qty: allocations.get(equipmentIds[i]).released,
+            updatedAt: serverTimestamp(),
+          });
         });
         tx.update(doc(db, 'requests', request.id), {
           status: 'borrowed',
+          inventoryDeductedAtApproval: true,
           releaseDate,
           releasedAt: serverTimestamp(),
           items,
@@ -490,6 +512,10 @@ export default function BorrowingReturns() {
       for (const ref of eqRefs) {
         eqSnaps.push(await tx.get(ref));
       }
+      const equipmentIds = [...new Set(items.map(item => item.equipmentId).filter(Boolean))];
+      const reservationRefs = equipmentIds.map(id => doc(db, 'equipmentReservations', reservationDocumentId(request.id, id)));
+      const reservationSnaps = [];
+      for (const ref of reservationRefs) reservationSnaps.push(await tx.get(ref));
       eqSnaps.forEach((snap, i) => {
         if (!snap.exists()) return;
         const data = snap.data();
@@ -500,6 +526,9 @@ export default function BorrowingReturns() {
           totalQty: Math.max(0, data.totalQty - missingQty),
           updatedAt: serverTimestamp(),
         });
+      });
+      reservationSnaps.forEach((snap, i) => {
+        if (snap.exists()) tx.update(reservationRefs[i], { status: 'released', updatedAt: serverTimestamp() });
       });
       tx.update(doc(db, 'requests', request.id), {
         status: 'returned',

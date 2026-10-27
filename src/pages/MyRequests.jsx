@@ -170,8 +170,14 @@ export default function MyRequests() {
                 {filtered.map(r => (
                   <tr key={r.id}>
                     <td data-label="Experiment" className="font-medium">{r.experiment}</td>
-                    <td data-label="Experiment Date">{formatDate(r.experimentDate)}</td>
-                    <td data-label="Expected Return">{formatDate(r.expectedReturnDate)}</td>
+                    <td data-label="Experiment Date">
+                      <p>{formatDate(r.experimentDate)}</p>
+                      <p className="text-xs text-gray-500">Borrow at {r.proposedBorrowTime || '08:00'}</p>
+                    </td>
+                    <td data-label="Expected Return">
+                      <p>{formatDate(r.expectedReturnDate)}</p>
+                      <p className="text-xs text-gray-500">By {r.expectedReturnTime || '12:00'}</p>
+                    </td>
                     <td data-label="Request Sent">
                       <p className="text-sm">{formatTimestamp(r.createdAt)}</p>
                       <p className="text-xs text-gray-400">{timeAgo(r.createdAt)}</p>

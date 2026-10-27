@@ -11,14 +11,16 @@ import {
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, formatTimeOfDay, isValidGradeLevel,
-  LAB_ROOMS, LAB_ROOM_IDS, getLabRoom, timesOverlap, durationLabel, countSchoolDays,
+  LAB_ROOMS, timesOverlap, durationLabel, countSchoolDays,
 } from '../lib/helpers';
+import { useLabRooms } from '../hooks/useLabRooms';
 
 export default function LabBooking() {
   const { userProfile } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { rooms } = useLabRooms();
   const today = getTodayManila();
 
   // Deep link from the room schedule: ?room=Room%20103&date=...&start=08:00&end=09:00
@@ -28,8 +30,7 @@ export default function LabBooking() {
   const preEnd = searchParams.get('end');
 
   const [form, setForm] = useState({
-    studentId: '',
-    labRoom: LAB_ROOM_IDS.includes(preRoom) ? preRoom : LAB_ROOMS[0].id,
+    labRoom: preRoom || LAB_ROOMS[0].id,
     bookingDate: preDate && preDate >= today ? preDate : today,
     startTime: /^\d{2}:\d{2}$/.test(preStart || '') ? preStart : '07:30',
     endTime: /^\d{2}:\d{2}$/.test(preEnd || '') ? preEnd : '08:30',
@@ -45,7 +46,13 @@ export default function LabBooking() {
   const [submitting, setSubmitting] = useState(false);
 
   const restricted = userProfile?.borrowRestrictedUntil && userProfile.borrowRestrictedUntil >= today;
-  const room = useMemo(() => getLabRoom(form.labRoom), [form.labRoom]);
+  const room = useMemo(() => rooms.find(item => item.id === form.labRoom) || null, [rooms, form.labRoom]);
+
+  useEffect(() => {
+    if (rooms.length && !rooms.some(item => item.id === form.labRoom)) {
+      setForm(current => ({ ...current, labRoom: rooms[0].id }));
+    }
+  }, [rooms, form.labRoom]);
 
   // Load this room's bookings for the chosen date so we can flag slot conflicts.
   useEffect(() => {
@@ -93,7 +100,7 @@ export default function LabBooking() {
 
   function validate() {
     const errs = {};
-    if (!form.studentId.trim()) errs.studentId = 'Your school ID is required.';
+    if (!/^\d{12}$/.test(userProfile?.lrn || '')) errs.studentId = 'Your profile needs a valid 12-digit LRN. Please contact the administrator.';
     if (!form.bookingDate) errs.bookingDate = 'Booking date is required.';
     if (form.bookingDate && form.bookingDate < today) errs.bookingDate = 'Choose today or a future date.';
     if (!form.startTime) errs.startTime = 'Start time is required.';
@@ -133,7 +140,7 @@ export default function LabBooking() {
       await addDoc(collection(db, 'labBookings'), {
         userId: userProfile.uid,
         studentName: userProfile.name,
-        studentId: form.studentId.trim(),
+        studentId: userProfile.lrn,
         gradeLevel: userProfile.gradeLevel,
         section: userProfile.section,
         labRoom: form.labRoom,
@@ -213,7 +220,7 @@ export default function LabBooking() {
           <div>
             <label className="label">Laboratory Room *</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {LAB_ROOMS.map(r => {
+              {rooms.map(r => {
                 const active = form.labRoom === r.id;
                 return (
                   <button
@@ -247,13 +254,8 @@ export default function LabBooking() {
               <input className="input bg-gray-50" value={userProfile?.name || ''} readOnly />
             </div>
             <div>
-              <label className="label">School ID *</label>
-              <input
-                className={`input ${errors.studentId ? 'input-error' : ''}`}
-                placeholder="e.g. 2026-0417"
-                value={form.studentId}
-                onChange={e => setField('studentId', e.target.value)}
-              />
+              <label className="label">LRN / Student ID</label>
+              <input className="input bg-gray-50" value={userProfile?.lrn || 'LRN not set on your profile'} readOnly />
               {errors.studentId && <p className="text-xs text-red-600 mt-1">{errors.studentId}</p>}
             </div>
             <div>

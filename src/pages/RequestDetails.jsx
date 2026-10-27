@@ -197,6 +197,8 @@ export default function RequestDetails() {
           <InfoRow label="Grade Level" value={request.gradeLevel} />
           <InfoRow label="Section" value={request.section} />
           <InfoRow label="Teacher" value={request.teacher} />
+          <InfoRow label="Proposed Borrow" value={`${formatDate(request.experimentDate)} · ${request.proposedBorrowTime || '08:00'}`} />
+          <InfoRow label="Expected Return" value={`${formatDate(request.expectedReturnDate)} · ${request.expectedReturnTime || '12:00'}`} />
         </div>
       </div>
 

@@ -147,7 +147,7 @@ export default function Login() {
             </>
           ) : (
             <>
-              <h2 className="text-xl font-bold text-ink mb-2">Reset password</h2>
+              <h2 className="text-xl font-bold text-ink mb-2">Reset your password for LabTrack</h2>
               <p className="text-sm text-gray-500 mb-6">Enter your email and we'll send a reset link.</p>
               {error && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm">{error}</div>

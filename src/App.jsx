@@ -8,6 +8,7 @@ import { firebaseConfigured, missingVars } from './lib/firebase';
 // Load each screen on demand so students do not download admin code up front.
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
 const Home = lazy(() => import('./pages/Home'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const RequestEquipment = lazy(() => import('./pages/RequestEquipment'));
@@ -78,6 +79,7 @@ export default function App() {
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
 
             {/* Protected routes */}
             <Route element={<RequireAuth />}>

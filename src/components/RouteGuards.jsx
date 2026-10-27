@@ -11,6 +11,7 @@ export function RequireAuth() {
   const location = useLocation();
   if (loading) return <PageLoader />;
   if (!currentUser) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!currentUser.emailVerified) return <Navigate to="/verify-email" replace />;
   return <AppShell />;
 }
 

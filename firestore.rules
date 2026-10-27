@@ -15,7 +15,9 @@ service cloud.firestore {
     function isEligibleStudent() {
       let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
       return isSignedIn()
+        && request.auth.token.email_verified == true
         && profile.role == 'student'
+        && profile.lrn.matches('^[0-9]{12}$')
         && profile.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'];
     }
 
@@ -28,6 +30,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.auth.uid == uid
         && request.resource.data.role == 'student'
+        && request.resource.data.lrn.matches('^[0-9]{12}$')
         && (!('gradeLevel' in request.resource.data) || request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'])
         && !('borrowRestrictedUntil' in request.resource.data)
         && !('restrictionReason' in request.resource.data);
@@ -45,8 +48,25 @@ service cloud.firestore {
       allow update: if isAdmin();
     }
 
+    // A create-only registry makes each LRN globally unique without exposing
+    // the registry to student reads or allowing an existing number to be replaced.
+    match /lrnRegistry/{lrn} {
+      allow create: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.lrn == lrn
+        && lrn.matches('^[0-9]{12}$');
+      allow read, update, delete: if isAdmin();
+    }
+
     // ── equipment ───────────────────────────────────────────────────────────
     match /equipment/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Reservation entries expose only equipment availability windows; account
+    // details stay on the private request documents.
+    match /equipmentReservations/{reservationId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
@@ -63,6 +83,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && isEligibleStudent()
         && request.resource.data.userId == request.auth.uid
+        && request.resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lrn
         && request.resource.data.gradeLevel == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gradeLevel
         && request.resource.data.status == 'pending';
 
@@ -102,6 +123,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && isEligibleStudent()
         && request.resource.data.userId == request.auth.uid
+        && request.resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lrn
         && request.resource.data.gradeLevel == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.gradeLevel
         && request.resource.data.status == 'pending';
 

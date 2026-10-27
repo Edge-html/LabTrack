@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Settings, Users, Tag, Sliders, BookOpen,
+  Settings, Users, Tag, Sliders, BookOpen, DoorOpen,
   Plus, Trash2, Edit2, Save, X, Database, AlertTriangle,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { db } from '../../lib/firebase';
 import {
   doc, getDoc, setDoc, getDocs, collection, query,
-  orderBy, updateDoc, serverTimestamp, writeBatch, addDoc,
+  orderBy, updateDoc, serverTimestamp, writeBatch, addDoc, runTransaction,
 } from 'firebase/firestore';
 import { formatDate, GRADE_LEVELS } from '../../lib/helpers';
 import { TableSkeleton } from '../../components/LoadingSpinner';
@@ -61,9 +61,14 @@ function ListEditor({ title, icon: Icon, items, onSave, loading }) {
 
   async function handleSave() {
     setSaving(true);
-    await onSave(list);
-    setSaving(false);
-    toast.success(`${title} saved.`);
+    try {
+      await onSave(list);
+      toast.success(`${title} saved.`);
+    } catch (err) {
+      toast.error(err.message || `Could not save ${title.toLowerCase()}.`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -141,14 +146,34 @@ function UsersTab() {
   async function saveUserEdit() {
     if (!editUser) return;
     try {
-      await updateDoc(doc(db, 'users', editUser.id), {
-        role: editUser.role,
-        gradeLevel: editUser.gradeLevel || null,
-        borrowRestrictedUntil: editUser.borrowRestrictedUntil || null,
-        restrictionReason: editUser.restrictionReason || null,
-        updatedAt: serverTimestamp(),
+      const lrn = String(editUser.lrn || '').replace(/\D/g, '');
+      if (editUser.role === 'student' && !/^\d{12}$/.test(lrn)) {
+        throw new Error('Student LRN must contain exactly 12 digits.');
+      }
+      await runTransaction(db, async tx => {
+        const userRef = doc(db, 'users', editUser.id);
+        const newLrnRef = /^\d{12}$/.test(lrn) ? doc(db, 'lrnRegistry', lrn) : null;
+        const oldLrn = String(editUser.originalLrn || '').replace(/\D/g, '');
+        const oldLrnRef = /^\d{12}$/.test(oldLrn) && oldLrn !== lrn ? doc(db, 'lrnRegistry', oldLrn) : null;
+        const newLrnSnap = newLrnRef ? await tx.get(newLrnRef) : null;
+        const oldLrnSnap = oldLrnRef ? await tx.get(oldLrnRef) : null;
+        if (newLrnSnap?.exists() && newLrnSnap.data().uid !== editUser.id) {
+          throw new Error('That LRN is already assigned to another account.');
+        }
+        tx.update(userRef, {
+          role: editUser.role,
+          gradeLevel: editUser.gradeLevel || null,
+          lrn: lrn || null,
+          borrowRestrictedUntil: editUser.borrowRestrictedUntil || null,
+          restrictionReason: editUser.restrictionReason || null,
+          updatedAt: serverTimestamp(),
+        });
+        if (newLrnRef && !newLrnSnap?.exists()) {
+          tx.set(newLrnRef, { uid: editUser.id, lrn, createdAt: serverTimestamp() });
+        }
+        if (oldLrnRef && oldLrnSnap?.exists() && oldLrnSnap.data().uid === editUser.id) tx.delete(oldLrnRef);
       });
-      setUsers(users.map(u => u.id === editUser.id ? editUser : u));
+      setUsers(users.map(u => u.id === editUser.id ? { ...editUser, lrn } : u));
       setEditUser(null);
       toast.success('User updated.');
     } catch (err) {
@@ -169,13 +194,14 @@ function UsersTab() {
         <div className="overflow-x-auto">
           <table className="table">
             <thead>
-              <tr><th>Name</th><th>Email</th><th>Grade</th><th>Role</th><th>Restricted Until</th><th>Actions</th></tr>
+              <tr><th>Name</th><th>Email</th><th>LRN</th><th>Grade</th><th>Role</th><th>Restricted Until</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {filtered.map(u => (
                 <tr key={u.id}>
                   <td className="font-medium text-ink">{u.name}</td>
                   <td className="text-sm">{u.email}</td>
+                  <td className="text-sm font-mono">{u.lrn || '—'}</td>
                   <td>{u.gradeLevel || '—'}</td>
                   <td>
                     <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${u.role === 'admin' ? 'bg-gold-pale text-crimson font-bold border border-gold/40' : 'bg-gray-100 text-gray-600'}`}>
@@ -186,7 +212,7 @@ function UsersTab() {
                     <span className="text-crimson font-semibold">{formatDate(u.borrowRestrictedUntil)}</span>
                   ) : '—'}</td>
                   <td>
-                    <button onClick={() => setEditUser({ ...u })} className="btn-secondary btn-sm">
+                    <button onClick={() => setEditUser({ ...u, originalLrn: u.lrn || '' })} className="btn-secondary btn-sm">
                       <Edit2 size={13} /> Edit
                     </button>
                   </td>
@@ -226,6 +252,17 @@ function UsersTab() {
                     <option value={editUser.gradeLevel}>{editUser.gradeLevel} (Legacy)</option>
                   )}
                 </select>
+              </div>
+              <div>
+                <label className="label">Learner Reference Number (LRN)</label>
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  maxLength={12}
+                  value={editUser.lrn || ''}
+                  onChange={e => setEditUser(u => ({ ...u, lrn: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
+                  placeholder="12-digit LRN"
+                />
               </div>
               <div>
                 <label className="label">Restriction Until (YYYY-MM-DD)</label>
@@ -464,19 +501,21 @@ export default function AdminSettings() {
   const [seedDone, setSeedDone] = useState(false);
   const [showSeedConfirm, setShowSeedConfirm] = useState(false);
 
-  const TABS = ['Users & Roles', 'Categories', 'Conditions', 'Penalty Rules', 'Contacts', 'Seed Data'];
+  const TABS = ['Users & Roles', 'Categories', 'Conditions', 'Penalty Rules', 'Contacts', 'Seed Data', 'Rooms & Facilities'];
 
   useEffect(() => {
     async function load() {
-      const [catSnap, condSnap, penSnap] = await Promise.all([
+      const [catSnap, condSnap, penSnap, roomSnap] = await Promise.all([
         getDoc(doc(db, 'settings', 'categories')),
         getDoc(doc(db, 'settings', 'conditions')),
         getDoc(doc(db, 'settings', 'penaltyRules')),
+        getDoc(doc(db, 'settings', 'labRooms')),
       ]);
       setSettings({
         categories: catSnap.exists() ? catSnap.data().list : DEFAULT_CATEGORIES,
         conditions: condSnap.exists() ? condSnap.data().list : DEFAULT_CONDITIONS,
         penaltyRules: penSnap.exists() ? penSnap.data().rules : DEFAULT_PENALTY_RULES,
+        labRooms: roomSnap.exists() ? roomSnap.data().list : ['Room 103', 'Room 301'],
       });
       setLoading(false);
     }
@@ -484,8 +523,15 @@ export default function AdminSettings() {
   }, []);
 
   async function saveList(key, list) {
-    await setDoc(doc(db, 'settings', key), { list, updatedAt: serverTimestamp() }, { merge: true });
-    setSettings(s => ({ ...s, [key]: list }));
+    const normalized = list.map(item => item.trim()).filter(Boolean);
+    if (key === 'labRooms') {
+      if (!normalized.length) throw new Error('Keep at least one room or facility available.');
+      if (new Set(normalized.map(item => item.toLowerCase())).size !== normalized.length) {
+        throw new Error('Room and facility names must be unique.');
+      }
+    }
+    await setDoc(doc(db, 'settings', key), { list: normalized, updatedAt: serverTimestamp() }, { merge: true });
+    setSettings(s => ({ ...s, [key]: normalized }));
   }
 
   async function savePenaltyRules(rules) {
@@ -764,6 +810,20 @@ export default function AdminSettings() {
                 confirmLabel="Yes, Load Data"
                 onConfirm={seedData}
                 onCancel={() => setShowSeedConfirm(false)}
+              />
+            </div>
+          )}
+          {tab === 6 && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Add or rename bookable rooms and facilities. Room names are used for new bookings; existing booking history keeps its original room name.
+              </p>
+              <ListEditor
+                title="Rooms & Facilities"
+                icon={DoorOpen}
+                items={settings.labRooms}
+                onSave={list => saveList('labRooms', list)}
+                loading={loading}
               />
             </div>
           )}

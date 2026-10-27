@@ -5,8 +5,12 @@ import {
   signInWithEmailAndPassword,
   signOut,
   sendPasswordResetEmail,
+  sendEmailVerification,
+  deleteUser,
+  reload,
+  getIdToken,
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { auth, db, firebaseConfigured } from '../lib/firebase';
 import { parseFirebaseError, isValidGradeLevel } from '../lib/helpers';
 
@@ -16,6 +20,7 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [, setAuthRevision] = useState(0);
 
   useEffect(() => {
     if (!firebaseConfigured) {
@@ -43,22 +48,46 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  async function register({ name, email, password, gradeLevel, section }) {
+  async function register({ name, email, password, gradeLevel, section, lrn }) {
     if (!isValidGradeLevel(gradeLevel)) {
       throw new Error('Only Grade 11 and Grade 12 students are permitted to register.');
     }
+    const normalizedLrn = String(lrn || '').replace(/\D/g, '');
+    if (!/^\d{12}$/.test(normalizedLrn)) throw new Error('LRN must contain exactly 12 digits.');
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const uid = cred.user.uid;
-    await setDoc(doc(db, 'users', uid), {
+    const profile = {
       name,
       email,
+      lrn: normalizedLrn,
       role: 'student',
       gradeLevel,
       section,
       createdAt: serverTimestamp(),
-    });
-    const snap = await getDoc(doc(db, 'users', uid));
-    setUserProfile({ uid, ...snap.data() });
+    };
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'users', uid), profile);
+      // Create-only rules on this document make the LRN unique atomically.
+      batch.set(doc(db, 'lrnRegistry', normalizedLrn), { uid, lrn: normalizedLrn, createdAt: serverTimestamp() });
+      await batch.commit();
+    } catch (error) {
+      // Do not leave an Auth account behind when its profile/LRN could not be claimed.
+      try { await deleteUser(cred.user); } catch { /* account cleanup is best effort */ }
+      throw error;
+    }
+
+    setCurrentUser(cred.user);
+    const profileSnap = await getDoc(doc(db, 'users', uid));
+    setUserProfile({ uid, ...profileSnap.data() });
+    let verificationSent = true;
+    try {
+      await sendEmailVerification(cred.user, { url: `${window.location.origin}/verify-email` });
+    } catch (error) {
+      verificationSent = false;
+      console.error('Could not send the first verification email:', error);
+    }
+    return { verificationSent };
   }
 
   async function login(email, password) {
@@ -71,7 +100,23 @@ export function AuthProvider({ children }) {
   }
 
   async function resetPassword(email) {
-    await sendPasswordResetEmail(auth, email);
+    await sendPasswordResetEmail(auth, email, {
+      url: `${window.location.origin}/login?passwordReset=complete`,
+      handleCodeInApp: false,
+    });
+  }
+
+  async function resendVerificationEmail() {
+    if (!auth.currentUser) throw new Error('Sign in first to request a verification email.');
+    await sendEmailVerification(auth.currentUser, { url: `${window.location.origin}/verify-email` });
+  }
+
+  async function refreshAuthUser() {
+    if (!auth.currentUser) return false;
+    await reload(auth.currentUser);
+    await getIdToken(auth.currentUser, true);
+    setAuthRevision(revision => revision + 1);
+    return auth.currentUser.emailVerified;
   }
 
   async function refreshProfile() {
@@ -96,6 +141,8 @@ export function AuthProvider({ children }) {
       login,
       logout,
       resetPassword,
+      resendVerificationEmail,
+      refreshAuthUser,
       refreshProfile,
       parseFirebaseError,
     }}>

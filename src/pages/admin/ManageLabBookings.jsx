@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
-  collection, query, where, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, limit, getDoc,
+  collection, query, where, getDocs, updateDoc, deleteDoc, doc, serverTimestamp, limit, getDoc, writeBatch,
 } from 'firebase/firestore';
 import {
   formatDate, formatTimeOfDay, formatTimestamp, timeAgo,
@@ -133,6 +133,8 @@ export default function ManageLabBookings() {
   const [details, setDetails] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [historyYear, setHistoryYear] = useState('');
+  const [deleteYearTarget, setDeleteYearTarget] = useState('');
 
   const preId = searchParams.get('id');
 
@@ -151,11 +153,10 @@ export default function ManageLabBookings() {
   async function load() {
     setLoading(true);
     try {
-      // Sorted client-side: ordering by bookingDate here would require a
-      // composite (status + bookingDate) index.
-      const snap = await getDocs(
-        query(collection(db, 'labBookings'), where('status', 'in', STATUS_BY_TAB[tab]), limit(300))
-      );
+      const bookingsQuery = tab === 2
+        ? query(collection(db, 'labBookings'), where('status', 'in', STATUS_BY_TAB[tab]))
+        : query(collection(db, 'labBookings'), where('status', 'in', STATUS_BY_TAB[tab]), limit(300));
+      const snap = await getDocs(bookingsQuery);
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       docs.sort((a, b) => {
         const d = (a.bookingDate || '').localeCompare(b.bookingDate || '');
@@ -172,6 +173,7 @@ export default function ManageLabBookings() {
 
   const filtered = bookings.filter(b => {
     const q = search.toLowerCase();
+    if (tab === 2 && historyYear && !b.bookingDate?.startsWith(`${historyYear}-`)) return false;
     return (
       !q ||
       b.studentName?.toLowerCase().includes(q) ||
@@ -180,6 +182,8 @@ export default function ManageLabBookings() {
       (b.labRoom || '').toLowerCase().includes(q)
     );
   });
+
+  const historyYears = [...new Set(bookings.map(b => b.bookingDate?.slice(0, 4)).filter(Boolean))].sort((a, b) => b.localeCompare(a));
 
   async function handleDecision(booking, action, remarks) {
     try {
@@ -233,6 +237,33 @@ export default function ManageLabBookings() {
       setDeleteTarget(null);
     } catch (err) {
       toast.error('Could not delete booking history: ' + err.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteYear() {
+    if (!deleteYearTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const year = deleteYearTarget;
+      const snap = await getDocs(query(
+        collection(db, 'labBookings'),
+        where('bookingDate', '>=', `${year}-01-01`),
+        where('bookingDate', '<=', `${year}-12-31`),
+      ));
+      const docs = snap.docs.filter(item => STATUS_BY_TAB[2].includes(item.data().status));
+      for (let i = 0; i < docs.length; i += 450) {
+        const batch = writeBatch(db);
+        docs.slice(i, i + 450).forEach(item => batch.delete(item.ref));
+        await batch.commit();
+      }
+      const deletedIds = new Set(docs.map(item => item.id));
+      setBookings(current => current.filter(booking => !deletedIds.has(booking.id)));
+      toast.success(`Deleted ${docs.length} booking record(s) from ${year}.`);
+      setDeleteYearTarget('');
+    } catch (err) {
+      toast.error('Could not delete that year’s history: ' + err.message);
     } finally {
       setDeleting(false);
     }
@@ -297,10 +328,26 @@ export default function ManageLabBookings() {
         </div>
 
         <div className="p-4 border-b border-gray-100">
-          <div className="relative max-w-xs">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input className="input pl-9" placeholder="Search student, room, purpose…"
-              value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="relative max-w-xs flex-1 min-w-[200px]">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className="input pl-9" placeholder="Search student, room, purpose…"
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            {tab === 2 && (
+              <>
+                <select className="input w-auto min-w-[130px]" value={historyYear} onChange={e => setHistoryYear(e.target.value)} aria-label="Filter booking history by year">
+                  <option value="">All years</option>
+                  {historyYears.map(year => <option key={year} value={year}>{year}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setDeleteYearTarget(historyYear)}
+                  disabled={!historyYear || !bookings.some(b => b.bookingDate?.startsWith(`${historyYear}-`))}
+                  className="btn-danger btn-sm"
+                >Delete {historyYear || 'year'} history</button>
+              </>
+            )}
           </div>
         </div>
 
@@ -376,7 +423,7 @@ export default function ManageLabBookings() {
                               onClick={() => setUseTarget({ booking: b, action: 'checkin' })}
                               className="btn-primary btn-sm"
                             >
-                              <LogIn size={13} /> Mark Used
+                              <LogIn size={13} /> Occupied
                             </button>
                           )}
                           {b.status === 'approved' && b.checkedInAt && (
@@ -384,7 +431,7 @@ export default function ManageLabBookings() {
                               onClick={() => setUseTarget({ booking: b, action: 'checkout' })}
                               className="btn-primary btn-sm"
                             >
-                              <LogOut size={13} /> Mark Returned
+                              <LogOut size={13} /> Done
                             </button>
                           )}
                           {(b.status === 'rejected' || b.status === 'cancelled') && b.studentName && (
@@ -450,6 +497,16 @@ export default function ManageLabBookings() {
         confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
         onCancel={() => { if (!deleting) setDeleteTarget(null); }}
         onConfirm={handleDeleteBooking}
+        busy={deleting}
+        danger
+      />
+      <ConfirmDialog
+        isOpen={!!deleteYearTarget}
+        title={`Delete all ${deleteYearTarget} booking history?`}
+        message={`Permanently delete every completed, rejected, or cancelled laboratory booking dated in ${deleteYearTarget}? This cannot be undone.`}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete year history'}
+        onCancel={() => { if (!deleting) setDeleteYearTarget(''); }}
+        onConfirm={handleDeleteYear}
         busy={deleting}
         danger
       />
