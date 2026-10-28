@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   applyActionCode, checkActionCode, confirmPasswordReset, verifyPasswordResetCode,
 } from 'firebase/auth';
 import { KeyRound, Loader2, MailCheck, ShieldCheck } from 'lucide-react';
 import { auth } from '../lib/firebase';
+import { useAuth } from '../context/AuthContext';
 
 const ERROR_MESSAGES = {
   'auth/expired-action-code': 'This email link has expired. Request a new one from LabTrack.',
@@ -15,6 +16,8 @@ const ERROR_MESSAGES = {
 
 export default function AuthAction() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { currentUser, refreshAuthUser } = useAuth();
   const mode = searchParams.get('mode');
   const actionCode = searchParams.get('oobCode');
   const [state, setState] = useState('loading');
@@ -100,6 +103,23 @@ export default function AuthAction() {
     }
   }
 
+  async function returnToLabTrack() {
+    setBusy(true);
+    try {
+      if (mode === 'verifyEmail' && currentUser && !(await refreshAuthUser())) {
+        setMessage('Your email is verified, but your session did not refresh. Sign in again to continue.');
+        setState('error');
+        return;
+      }
+      navigate(mode === 'resetPassword' ? '/login' : '/', { replace: true });
+    } catch {
+      setMessage('Your email is verified, but LabTrack could not refresh your session. Sign in again to continue.');
+      setState('error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const isReset = state === 'reset';
   const Icon = mode === 'resetPassword' ? KeyRound : mode === 'verifyEmail' ? MailCheck : ShieldCheck;
 
@@ -153,10 +173,16 @@ export default function AuthAction() {
               className={`mt-3 text-sm ${state === 'error' ? 'text-red-700' : 'text-gray-600'}`}>
               {message}
             </p>
-            <Link to={state === 'error' ? '/login' : mode === 'resetPassword' ? '/login' : '/verify-email'}
-              className="btn-primary mt-5 inline-flex justify-center">
-              {state === 'error' ? 'Go to LabTrack' : mode === 'resetPassword' ? 'Go to sign in' : 'Return to LabTrack'}
-            </Link>
+            {state === 'error' || mode === 'resetPassword' ? (
+              <Link to="/login" className="btn-primary mt-5 inline-flex justify-center">
+                {state === 'error' ? 'Go to LabTrack' : 'Go to sign in'}
+              </Link>
+            ) : (
+              <button type="button" onClick={returnToLabTrack} disabled={busy}
+                className="btn-primary mt-5 inline-flex justify-center">
+                {busy ? 'Opening LabTrack…' : 'Return to LabTrack'}
+              </button>
+            )}
           </>
         )}
       </div>
