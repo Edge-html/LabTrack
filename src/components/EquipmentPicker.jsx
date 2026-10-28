@@ -2,18 +2,30 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, Search } from 'lucide-react';
 
 const KNOWN_LABS = ['Physics Lab', 'Biochem Lab', 'Unassigned'];
+const LAB_FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: 'Physics Lab', label: 'Physics' },
+  { value: 'Biochem Lab', label: 'Biochem' },
+  { value: 'Unassigned', label: 'Unassigned' },
+];
 
 export default function EquipmentPicker({ equipment, value, onChange, invalid = false }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [labFilter, setLabFilter] = useState('all');
   const rootRef = useRef(null);
   const selected = equipment.find(item => item.id === value);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return equipment.filter(item => !q || [item.name, item.category, item.lab]
-      .some(text => text?.toLowerCase().includes(q)));
-  }, [equipment, search]);
+    return equipment.filter(item => {
+      const itemLab = item.lab || 'Unassigned';
+      const matchesLab = labFilter === 'all' || itemLab === labFilter;
+      const matchesSearch = !q || [item.name, item.category, itemLab]
+        .some(text => text?.toLowerCase().includes(q));
+      return matchesLab && matchesSearch;
+    });
+  }, [equipment, labFilter, search]);
 
   useEffect(() => {
     function closeOutside(event) {
@@ -63,6 +75,23 @@ export default function EquipmentPicker({ equipment, value, onChange, invalid = 
                 onChange={event => setSearch(event.target.value)}
               />
             </div>
+          </div>
+          <div className="flex gap-1.5 px-2 py-2 border-b border-gray-100 overflow-x-auto" role="group" aria-label="Filter equipment by laboratory">
+            {LAB_FILTERS.map(filter => (
+              <button
+                key={filter.value}
+                type="button"
+                aria-pressed={labFilter === filter.value}
+                onClick={() => setLabFilter(filter.value)}
+                className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  labFilter === filter.value
+                    ? 'border-primary-700 bg-primary-700 text-white'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-primary-300 hover:text-primary-700'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
           </div>
           <div role="listbox" aria-label="Equipment choices" className="max-h-64 overflow-y-auto p-1">
             {filtered.length === 0 ? (

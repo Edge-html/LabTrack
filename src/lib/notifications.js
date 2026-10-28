@@ -263,7 +263,7 @@ export function buildStudentNotifications(data = {}) {
           kind: 'booking_completed',
           tone: 'positive',
           title: 'Laboratory booking completed',
-          body: `${b.labRoom || 'The laboratory'} on ${bookingWhen(b)} was closed and the room returned.`,
+          body: `${b.labRoom || 'The laboratory'} on ${bookingWhen(b)} was marked as done.`,
           to,
           action: 'View booking',
           at: b.returnedAt,
