@@ -40,9 +40,19 @@ export default function VerifyEmail() {
     setError('');
     try {
       const result = await resendVerificationEmail();
-      toast.success(result?.returnsToApp === false
-        ? 'Verification link sent. After confirming it on Firebase’s page, return here and check your verification.'
-        : 'A new verification link has been sent.');
+      if (result?.alreadyVerified) {
+        const isVerified = await refreshAuthUser();
+        if (isVerified) {
+          toast.success('Your email is already verified.');
+          navigate('/', { replace: true });
+          return;
+        }
+      }
+      toast.success(result?.delivery === 'labtrack'
+        ? 'A LabTrack verification email has been sent.'
+        : result?.returnsToApp === false
+          ? 'Verification link sent. Complete it on Firebase’s page, then return here and check your verification.'
+          : 'A verification email has been sent. If its link does not open, contact the lab administrator.');
     } catch (err) {
       setError(err.message || 'Could not send the verification email.');
     } finally {
@@ -72,6 +82,11 @@ export default function VerifyEmail() {
                 : 'Your email is not verified yet. Request a verification link for '}
           <strong>{currentUser.email}</strong>. Verify it before using LabTrack.
         </p>
+        {location.state?.verificationDelivery === 'firebase' && location.state?.verificationSent && (
+          <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+            This email used the temporary verification route. If its link does not open, contact the lab administrator for help.
+          </p>
+        )}
         {location.state?.verificationReturnsToApp === false && (
           <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
             The link will open Firebase’s verification page. After confirming, return to this tab and choose “I have verified my email.” Add this website’s domain to Firebase Authentication’s authorized domains to enable the automatic return link.

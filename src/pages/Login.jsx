@@ -36,6 +36,7 @@ export default function Login() {
           state: {
             verificationSent: result.verificationSent,
             verificationReturnsToApp: result.verificationReturnsToApp,
+            verificationDelivery: result.verificationDelivery,
             verificationCooldown: result.verificationCooldown,
             verificationError: result.verificationError,
           },

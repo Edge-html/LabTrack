@@ -56,6 +56,7 @@ export default function Register() {
         state: {
           verificationSent: result?.verificationSent !== false,
           verificationReturnsToApp: result?.verificationReturnsToApp,
+          verificationDelivery: result?.verificationDelivery,
         },
       });
     } catch (err) {

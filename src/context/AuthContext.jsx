@@ -45,13 +45,38 @@ function recordVerificationAttempt(uid) {
 
 async function sendVerificationWithFallback(user) {
   try {
+    const idToken = await getIdToken(user);
+    const response = await fetch('/api/auth/send-verification', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + idToken },
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (response.ok && payload.sent) {
+      return { returnsToApp: true, delivery: 'labtrack' };
+    }
+    if (response.ok && payload.alreadyVerified) {
+      return { returnsToApp: true, delivery: 'labtrack', alreadyVerified: true };
+    }
+    if (response.status === 429) {
+      const error = new Error(payload.message || 'Please wait before requesting another verification email.');
+      error.code = 'auth/too-many-requests';
+      throw error;
+    }
+    console.warn('LabTrack email delivery is not ready; falling back to Firebase email delivery:', payload.code || response.status);
+  } catch (error) {
+    if (error?.code === 'auth/too-many-requests') throw error;
+    console.warn('LabTrack email delivery is unavailable; falling back to Firebase email delivery:', error?.message || error);
+  }
+
+  try {
     await sendEmailVerification(user, { url: `${window.location.origin}/verify-email` });
-    return true;
+    return { returnsToApp: true, delivery: 'firebase' };
   } catch (error) {
     if (error?.code !== 'auth/unauthorized-continue-uri') throw error;
     console.warn('Verification redirect domain is not authorized; sending a Firebase default action link.');
     await sendEmailVerification(user);
-    return false;
+    return { returnsToApp: false, delivery: 'firebase' };
   }
 }
 
@@ -136,13 +161,16 @@ export function AuthProvider({ children }) {
     setUserProfile({ uid, ...profileSnap.data() });
     let verificationSent = true;
     let verificationReturnsToApp = true;
+    let verificationDelivery = null;
     try {
-      verificationReturnsToApp = await sendVerificationWithFallback(cred.user);
+      const sendResult = await sendVerificationWithFallback(cred.user);
+      verificationReturnsToApp = sendResult.returnsToApp;
+      verificationDelivery = sendResult.delivery;
     } catch (error) {
       verificationSent = false;
       console.error('Could not send the first verification email:', error);
     }
-    return { verificationSent, verificationReturnsToApp };
+    return { verificationSent, verificationReturnsToApp, verificationDelivery };
   }
 
   async function login(email, password) {
@@ -178,8 +206,18 @@ export function AuthProvider({ children }) {
     // Record before sending so repeat logins do not hammer Firebase if it fails.
     recordVerificationAttempt(user.uid);
     try {
-      const verificationReturnsToApp = await sendVerificationWithFallback(user);
-      return { needsVerification: true, verificationSent: true, verificationReturnsToApp };
+      const sendResult = await sendVerificationWithFallback(user);
+      if (sendResult.alreadyVerified) {
+        await reload(user);
+        if (user.emailVerified) return { needsVerification: false };
+      }
+      return {
+        needsVerification: true,
+        verificationSent: !sendResult.alreadyVerified,
+        verificationReturnsToApp: sendResult.returnsToApp,
+        verificationDelivery: sendResult.delivery,
+        alreadyVerified: sendResult.alreadyVerified,
+      };
     } catch (error) {
       console.error('Could not send a verification email during sign-in:', error);
       return {
@@ -204,8 +242,7 @@ export function AuthProvider({ children }) {
     if (!auth.currentUser) throw new Error('Sign in first to request a verification email.');
     if (userProfile?.role === 'admin') return { skipped: true };
     recordVerificationAttempt(auth.currentUser.uid);
-    const returnsToApp = await sendVerificationWithFallback(auth.currentUser);
-    return { returnsToApp };
+    return sendVerificationWithFallback(auth.currentUser);
   }
 
   async function refreshAuthUser() {
