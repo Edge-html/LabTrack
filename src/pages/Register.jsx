@@ -57,6 +57,7 @@ export default function Register() {
           verificationSent: result?.verificationSent !== false,
           verificationReturnsToApp: result?.verificationReturnsToApp,
           verificationDelivery: result?.verificationDelivery,
+          verificationError: result?.verificationError,
         },
       });
     } catch (err) {

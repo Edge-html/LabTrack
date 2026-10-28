@@ -7,7 +7,7 @@
 ## Local Setup
 
 ### Prerequisites
-- **Node.js** 18+ and npm
+- **Node.js** 22+ and npm (required by the Firebase Admin SDK used by the verification API)
 - A Firebase project (see below)
 
 ### Installation
@@ -103,7 +103,7 @@ firebase deploy --only firestore
   - `LABTRACK_APP_URL`: `https://knchs-labtrack.vercel.app`.
   - Recommended: `BREVO_API_KEY` plus `EMAIL_FROM`, set to a sender address verified in Brevo, such as `LabTrack <sender@example.com>`. Brevo API sending uses its API key, so no Gmail App Password or SMTP settings are needed. Transactional sending may require account activation; free addresses may be rewritten to a Brevo sending domain.
   - Alternatively, omit `BREVO_API_KEY` and set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, and `SMTP_PASSWORD` for another SMTP provider. `EMAIL_REPLY_TO` is optional.
-- Save the variables for **Production** and redeploy Vercel. Registration, automatic unverified sign-in, and the resend button will then send verification messages through the custom mailer, with a short **Verify your email** link that opens `/auth/action`. A server-side cooldown limits resends. Until the Vercel variables are configured, the app falls back to Firebase's built-in email sender.
+- Save the variables for **Production** and redeploy Vercel. Registration, automatic unverified sign-in, and the resend button will then send verification messages through the custom mailer, with a short **Verify your email** link that opens `/auth/action`. A server-side cooldown limits resends. Verification never silently falls back to Firebase: if the custom mailer is unavailable or Brevo rejects a message, LabTrack reports the failure so users do not receive a broken Firebase action link.
 - The Vercel mailer needs either a Brevo API key or SMTP credentials plus a sender accepted by that provider. This avoids Firebase Cloud Functions and the Blaze plan; provider sending limits and account requirements still apply.
 - Firebase's built-in template can still be branded in **Firebase Console → Authentication → Templates**. The subject can be set to **Verify your email for LabTrack** or **Reset your password for LabTrack**. The custom mailer controls verification email branding independently of those templates. Password reset emails still use Firebase's built-in delivery unless a separate custom reset mailer is configured.
 - In **Project settings → General**, set the public-facing project name to **LabTrack** so Firebase’s default template uses the app name instead of the project ID.

@@ -201,8 +201,17 @@ export default async function handler(request, response) {
         body: JSON.stringify(payload),
       });
       if (!providerResponse.ok) {
-        console.error('Brevo verification email request failed with status:', providerResponse.status);
-        throw new HttpError(502, 'mail-provider-send-failed', 'The email provider could not send the verification email.');
+        const providerError = await providerResponse.json().catch(() => ({}));
+        console.error('Brevo verification email request failed:', {
+          status: providerResponse.status,
+          code: providerError.code,
+          message: providerError.message,
+        });
+        throw new HttpError(
+          502,
+          'mail-provider-send-failed',
+          `Brevo rejected the verification email (HTTP ${providerResponse.status}). Check the API key, verified sender, and transactional email activation.`,
+        );
       }
     } else {
       const transporter = nodemailer.createTransport({
