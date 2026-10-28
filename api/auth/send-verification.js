@@ -1,8 +1,3 @@
-import { cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-import { FieldValue, getFirestore } from 'firebase-admin/firestore';
-import nodemailer from 'nodemailer';
-
 const MIN_RESEND_INTERVAL_MS = 60 * 1000;
 const DEFAULT_APP_URL = 'https://knchs-labtrack.vercel.app';
 
@@ -79,7 +74,8 @@ function parseMailbox(value, fallbackName) {
   return { ...(fallbackName ? { name: fallbackName } : {}), email: mailbox };
 }
 
-function getAdminApp(serviceAccount) {
+async function getAdminApp(serviceAccount) {
+  const { cert, getApps, initializeApp } = await import('firebase-admin/app');
   const existing = getApps().find((app) => app.name === 'labtrack-verification-mailer');
   if (existing) return existing;
   return initializeApp({
@@ -118,6 +114,7 @@ function makeLabTrackActionUrl(generatedLink, appOrigin) {
 }
 
 async function reserveResendSlot(db, uid) {
+  const { FieldValue } = await import('firebase-admin/firestore');
   const ref = db.collection('_privateAuthEmailLimits').doc(uid);
   const now = Date.now();
 
@@ -149,7 +146,8 @@ export default async function handler(request, response) {
     const match = String(request.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
     if (!match) throw new HttpError(401, 'missing-auth-token', 'Sign in to request a verification email.');
 
-    const app = getAdminApp(config.serviceAccount);
+    const app = await getAdminApp(config.serviceAccount);
+    const { getAuth } = await import('firebase-admin/auth');
     const adminAuth = getAuth(app);
     const decodedToken = await adminAuth.verifyIdToken(match[1], true);
     const user = await adminAuth.getUser(decodedToken.uid);
@@ -160,6 +158,7 @@ export default async function handler(request, response) {
       return response.status(200).json({ sent: false, alreadyVerified: true, delivery: 'labtrack' });
     }
 
+    const { getFirestore } = await import('firebase-admin/firestore');
     const db = getFirestore(app);
     await reserveResendSlot(db, user.uid);
 
@@ -214,6 +213,7 @@ export default async function handler(request, response) {
         );
       }
     } else {
+      const { default: nodemailer } = await import('nodemailer');
       const transporter = nodemailer.createTransport({
         host: config.smtpHost,
         port: config.smtpPort,
