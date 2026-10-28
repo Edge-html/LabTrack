@@ -9,6 +9,7 @@ import { firebaseConfigured, missingVars } from './lib/firebase';
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+const AuthAction = lazy(() => import('./pages/AuthAction'));
 const Home = lazy(() => import('./pages/Home'));
 const Inventory = lazy(() => import('./pages/Inventory'));
 const RequestEquipment = lazy(() => import('./pages/RequestEquipment'));
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/auth/action" element={<AuthAction />} />
 
             {/* Protected routes */}
             <Route element={<RequireAuth />}>
