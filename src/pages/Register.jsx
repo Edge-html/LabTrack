@@ -24,7 +24,7 @@ export default function Register() {
     const errs = {};
     if (!form.name.trim()) errs.name = 'Full name is required.';
     if (!form.email) errs.email = 'Email is required.';
-    if (!/^\d{12}$/.test(form.lrn)) errs.lrn = 'Enter the student’s 12-digit LRN.';
+    if (!/^\d+$/.test(form.lrn)) errs.lrn = 'Enter your LRN using digits only.';
     if (!form.gradeLevel || !isValidGradeLevel(form.gradeLevel)) {
       errs.gradeLevel = 'Please select Grade 11 or Grade 12.';
     }
@@ -143,11 +143,10 @@ export default function Register() {
                   type="text"
                   inputMode="numeric"
                   autoComplete="off"
-                  maxLength={12}
                   value={form.lrn}
-                  onChange={e => setField('lrn', e.target.value.replace(/\D/g, '').slice(0, 12))}
+                  onChange={e => setField('lrn', e.target.value.replace(/\D/g, ''))}
                   className={`input ${fieldErrors.lrn ? 'input-error' : ''}`}
-                  placeholder="12-digit LRN"
+                  placeholder="LRN (digits only)"
                   required
                 />
                 {fieldErrors.lrn && <p className="text-xs text-red-600 mt-1">{fieldErrors.lrn}</p>}

@@ -103,7 +103,7 @@ export default function LabBooking() {
 
   function validate() {
     const errs = {};
-    if (!/^\d{12}$/.test(userProfile?.lrn || '')) errs.studentId = 'Your profile needs a valid 12-digit LRN. Please contact the administrator.';
+    if (!/^\d+$/.test(userProfile?.lrn || '')) errs.studentId = 'Your profile needs a valid LRN. Please contact the administrator.';
     if (!form.bookingDate) errs.bookingDate = 'Booking date is required.';
     if (form.bookingDate && form.bookingDate < today) errs.bookingDate = 'Choose today or a future date.';
     if (!form.startTime) errs.startTime = 'Start time is required.';

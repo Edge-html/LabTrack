@@ -387,7 +387,7 @@ export default function Inventory() {
       <div className="card">
         <div className="card-header">
           <Package size={18} strokeWidth={1.8} />
-          Laboratory Equipment Inventory
+          Laboratory Inventory
           {isAdmin && (
             <div className="ml-auto flex gap-2">
               <button onClick={() => setShowBulk(true)} className="btn-secondary btn-sm">

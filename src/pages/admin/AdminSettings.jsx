@@ -147,14 +147,14 @@ function UsersTab() {
     if (!editUser) return;
     try {
       const lrn = String(editUser.lrn || '').replace(/\D/g, '');
-      if (editUser.role === 'student' && !/^\d{12}$/.test(lrn)) {
-        throw new Error('Student LRN must contain exactly 12 digits.');
+      if (editUser.role === 'student' && !/^\d+$/.test(lrn)) {
+        throw new Error('Student LRN must contain digits only.');
       }
       await runTransaction(db, async tx => {
         const userRef = doc(db, 'users', editUser.id);
-        const newLrnRef = /^\d{12}$/.test(lrn) ? doc(db, 'lrnRegistry', lrn) : null;
+        const newLrnRef = /^\d+$/.test(lrn) ? doc(db, 'lrnRegistry', lrn) : null;
         const oldLrn = String(editUser.originalLrn || '').replace(/\D/g, '');
-        const oldLrnRef = /^\d{12}$/.test(oldLrn) && oldLrn !== lrn ? doc(db, 'lrnRegistry', oldLrn) : null;
+        const oldLrnRef = /^\d+$/.test(oldLrn) && oldLrn !== lrn ? doc(db, 'lrnRegistry', oldLrn) : null;
         const newLrnSnap = newLrnRef ? await tx.get(newLrnRef) : null;
         const oldLrnSnap = oldLrnRef ? await tx.get(oldLrnRef) : null;
         if (newLrnSnap?.exists() && newLrnSnap.data().uid !== editUser.id) {
@@ -258,10 +258,9 @@ function UsersTab() {
                 <input
                   className="input"
                   inputMode="numeric"
-                  maxLength={12}
                   value={editUser.lrn || ''}
-                  onChange={e => setEditUser(u => ({ ...u, lrn: e.target.value.replace(/\D/g, '').slice(0, 12) }))}
-                  placeholder="12-digit LRN"
+                  onChange={e => setEditUser(u => ({ ...u, lrn: e.target.value.replace(/\D/g, '') }))}
+                  placeholder="LRN (digits only)"
                 />
               </div>
               <div>

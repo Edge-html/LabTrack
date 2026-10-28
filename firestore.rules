@@ -17,7 +17,8 @@ service cloud.firestore {
       return isSignedIn()
         && request.auth.token.email_verified == true
         && profile.role == 'student'
-        && profile.lrn.matches('^[0-9]{12}$')
+        && profile.lrn is string
+        && profile.lrn.matches('^[0-9]+$')
         && profile.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'];
     }
 
@@ -48,7 +49,8 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.auth.uid == uid
         && request.resource.data.role == 'student'
-        && request.resource.data.lrn.matches('^[0-9]{12}$')
+        && request.resource.data.lrn is string
+        && request.resource.data.lrn.matches('^[0-9]+$')
         && (!('gradeLevel' in request.resource.data) || request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'])
         && !('borrowRestrictedUntil' in request.resource.data)
         && !('restrictionReason' in request.resource.data);
@@ -72,7 +74,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.lrn == lrn
-        && lrn.matches('^[0-9]{12}$');
+        && lrn.matches('^[0-9]+$');
       allow read, update, delete: if isAdmin();
     }
 

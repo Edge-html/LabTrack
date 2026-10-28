@@ -1,24 +1,45 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Archive, Search, Check, AlertTriangle, Camera, ShieldCheck, AlertOctagon, Loader2,
+  Archive, Search, Check, AlertTriangle, Camera, ShieldCheck, AlertOctagon, Loader2, Trash2,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   collection, query, where, getDocs, doc, runTransaction,
-  serverTimestamp, orderBy, limit,
+  serverTimestamp, orderBy, limit, writeBatch,
 } from 'firebase/firestore';
 import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
 import { StatusBadge, ConditionBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import ReturnProofCard from '../../components/ReturnProofCard';
 import { proofPhotos } from '../../lib/upload';
 import { ensureActiveEquipmentReservations, reservationDocumentId } from '../../lib/equipmentReservations';
 
 const ACTIVE_STATUSES = ['approved', 'borrowed', 'return_submitted', 'return_flagged'];
 const hasReturnProof = request => Boolean(request.returnProofMeta?.count || proofPhotos(request.returnProof).length);
+
+function requestHistoryDeleteRefs(request) {
+  const equipmentIds = [...new Set((Array.isArray(request.items) ? request.items : [])
+    .map(item => item.equipmentId)
+    .filter(Boolean))];
+  return [
+    doc(db, 'requests', request.id),
+    doc(db, 'requestProofs', request.id),
+    ...equipmentIds.map(id => doc(db, 'equipmentReservations', reservationDocumentId(request.id, id))),
+  ];
+}
+
+async function deleteRequestHistoryDocs(requestsToDelete) {
+  const refs = requestsToDelete.flatMap(requestHistoryDeleteRefs);
+  for (let offset = 0; offset < refs.length; offset += 450) {
+    const batch = writeBatch(db);
+    refs.slice(offset, offset + 450).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+}
 
 /* ── Mark borrowed ────────────────────────────────────────────────────────── */
 
@@ -391,6 +412,10 @@ export default function BorrowingReturns() {
   const [returnTarget, setReturnTarget] = useState(null);
   const [reviewTarget, setReviewTarget] = useState(null);
   const [showViolationPrompt, setShowViolationPrompt] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteYear, setDeleteYear] = useState('');
+  const [deleteYearTarget, setDeleteYearTarget] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const [tab, setTab] = useState(0);
 
@@ -433,6 +458,55 @@ export default function BorrowingReturns() {
       toast.error('Failed to load requests.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleDeleteHistory() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      await deleteRequestHistoryDocs([deleteTarget]);
+      setRequests(current => current.filter(request => request.id !== deleteTarget.id));
+      toast.success('Equipment borrowing history deleted.');
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error('Could not delete equipment history: ' + err.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function handleDeleteYearHistory() {
+    if (!deleteYearTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const year = deleteYearTarget;
+      let deleted = 0;
+      const deletedIds = new Set();
+      while (true) {
+        const snap = await getDocs(query(
+          collection(db, 'requests'),
+          where('status', '==', 'returned'),
+          where('actualReturnDate', '>=', `${year}-01-01`),
+          where('actualReturnDate', '<=', `${year}-12-31`),
+          orderBy('actualReturnDate', 'desc'),
+          limit(40),
+        ));
+        if (snap.empty) break;
+        const page = snap.docs.map(item => ({ id: item.id, ...item.data() }));
+        await deleteRequestHistoryDocs(page);
+        page.forEach(request => deletedIds.add(request.id));
+        deleted += page.length;
+        setRequests(current => current.filter(request => !deletedIds.has(request.id)));
+      }
+      await load();
+      toast.success(`Deleted ${deleted} equipment borrowing record(s) from ${year}.`);
+      setDeleteYear('');
+      setDeleteYearTarget('');
+    } catch (err) {
+      toast.error('Could not delete equipment history for that year: ' + err.message);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -669,12 +743,27 @@ export default function BorrowingReturns() {
           </div>
         )}
 
-        <div className="p-4 border-b border-gray-100">
+        <div className="p-4 border-b border-gray-100 flex flex-wrap items-end gap-3">
           <div className="relative max-w-xs">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input className="input pl-9" placeholder="Search by student or experiment…"
               value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          {tab === 1 && (
+            <div className="flex flex-wrap items-end gap-2 ml-auto">
+              <div>
+                <label className="label" htmlFor="equipment-history-year">Delete returned history for year</label>
+                <input id="equipment-history-year" type="number" min="1900" max={new Date().getFullYear()}
+                  step="1" inputMode="numeric" className="input w-36" placeholder="e.g. 2026"
+                  value={deleteYear} onChange={event => setDeleteYear(event.target.value)} />
+              </div>
+              <button type="button" className="btn-danger btn-sm"
+                disabled={deleting || !/^\d{4}$/.test(deleteYear) || Number(deleteYear) > new Date().getFullYear()}
+                onClick={() => setDeleteYearTarget(deleteYear)}>
+                <Trash2 size={13} /> Delete Year
+              </button>
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -682,7 +771,7 @@ export default function BorrowingReturns() {
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-gray-400">
             <Archive size={32} className="mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No active borrowings found.</p>
+            <p className="text-sm">{tab === 0 ? 'No active borrowings found.' : 'No returned equipment history found.'}</p>
           </div>
         ) : (
           <div className="table-container">
@@ -796,6 +885,12 @@ export default function BorrowingReturns() {
                             </Link>
                           </>
                         )}
+                        {tab === 1 && (
+                          <button type="button" onClick={() => setDeleteTarget(r)} disabled={deleting}
+                            className="btn-danger btn-sm" title="Permanently delete this borrowing history">
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -870,6 +965,29 @@ export default function BorrowingReturns() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete equipment borrowing history?"
+        message={deleteTarget
+          ? `Permanently delete ${deleteTarget.borrowerName || 'this student'}’s returned request for ${deleteTarget.experiment || 'this equipment'}? Related return proof and reservation records will also be removed.`
+          : ''}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
+        onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={handleDeleteHistory}
+        busy={deleting}
+        danger
+      />
+      <ConfirmDialog
+        isOpen={!!deleteYearTarget}
+        title={`Delete all returned equipment history from ${deleteYearTarget}?`}
+        message={`Permanently delete every equipment borrowing record returned in ${deleteYearTarget}, including its return proof and reservation records? This cannot be undone.`}
+        confirmLabel={deleting ? 'Deleting…' : 'Delete year history'}
+        onCancel={() => { if (!deleting) setDeleteYearTarget(''); }}
+        onConfirm={handleDeleteYearHistory}
+        busy={deleting}
+        danger
+      />
     </div>
   );
 }

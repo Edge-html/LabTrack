@@ -127,7 +127,7 @@ export function AuthProvider({ children }) {
       throw new Error('Only Grade 11 and Grade 12 students are permitted to register.');
     }
     const normalizedLrn = String(lrn || '').replace(/\D/g, '');
-    if (!/^\d{12}$/.test(normalizedLrn)) throw new Error('LRN must contain exactly 12 digits.');
+    if (!/^\d+$/.test(normalizedLrn)) throw new Error('LRN must contain digits only.');
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const uid = cred.user.uid;
     const profile = {
