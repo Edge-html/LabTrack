@@ -51,7 +51,13 @@ export default function Register() {
         gradeLevel: form.gradeLevel,
         section: form.section.trim(),
       });
-      navigate('/verify-email', { replace: true, state: { verificationSent: result?.verificationSent !== false } });
+      navigate('/verify-email', {
+        replace: true,
+        state: {
+          verificationSent: result?.verificationSent !== false,
+          verificationReturnsToApp: result?.verificationReturnsToApp,
+        },
+      });
     } catch (err) {
       setError(parseFirebaseError(err));
     } finally {

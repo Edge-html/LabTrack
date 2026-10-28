@@ -7,11 +7,13 @@ import { PageLoader } from './LoadingSpinner';
 import labPics4 from '../assets/lab-pics4.jpg';
 
 export function RequireAuth() {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, userProfile, loading } = useAuth();
   const location = useLocation();
   if (loading) return <PageLoader />;
   if (!currentUser) return <Navigate to="/login" state={{ from: location }} replace />;
-  if (!currentUser.emailVerified) return <Navigate to="/verify-email" replace />;
+  if (!currentUser.emailVerified && userProfile?.role !== 'admin') {
+    return <Navigate to="/verify-email" replace />;
+  }
   return <AppShell />;
 }
 

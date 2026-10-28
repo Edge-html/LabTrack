@@ -16,6 +16,33 @@ import { parseFirebaseError, isValidGradeLevel } from '../lib/helpers';
 
 const AuthContext = createContext(null);
 
+async function sendVerificationWithFallback(user) {
+  try {
+    await sendEmailVerification(user, { url: `${window.location.origin}/verify-email` });
+    return true;
+  } catch (error) {
+    if (error?.code !== 'auth/unauthorized-continue-uri') throw error;
+    console.warn('Verification redirect domain is not authorized; sending a Firebase default action link.');
+    await sendEmailVerification(user);
+    return false;
+  }
+}
+
+async function sendPasswordResetWithFallback(email) {
+  try {
+    await sendPasswordResetEmail(auth, email, {
+      url: `${window.location.origin}/login?passwordReset=complete`,
+      handleCodeInApp: false,
+    });
+    return true;
+  } catch (error) {
+    if (error?.code !== 'auth/unauthorized-continue-uri') throw error;
+    console.warn('Password-reset redirect domain is not authorized; sending a Firebase default action link.');
+    await sendPasswordResetEmail(auth, email);
+    return false;
+  }
+}
+
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
@@ -81,13 +108,14 @@ export function AuthProvider({ children }) {
     const profileSnap = await getDoc(doc(db, 'users', uid));
     setUserProfile({ uid, ...profileSnap.data() });
     let verificationSent = true;
+    let verificationReturnsToApp = true;
     try {
-      await sendEmailVerification(cred.user, { url: `${window.location.origin}/verify-email` });
+      verificationReturnsToApp = await sendVerificationWithFallback(cred.user);
     } catch (error) {
       verificationSent = false;
       console.error('Could not send the first verification email:', error);
     }
-    return { verificationSent };
+    return { verificationSent, verificationReturnsToApp };
   }
 
   async function login(email, password) {
@@ -100,15 +128,15 @@ export function AuthProvider({ children }) {
   }
 
   async function resetPassword(email) {
-    await sendPasswordResetEmail(auth, email, {
-      url: `${window.location.origin}/login?passwordReset=complete`,
-      handleCodeInApp: false,
-    });
+    const returnsToApp = await sendPasswordResetWithFallback(email);
+    return { returnsToApp };
   }
 
   async function resendVerificationEmail() {
     if (!auth.currentUser) throw new Error('Sign in first to request a verification email.');
-    await sendEmailVerification(auth.currentUser, { url: `${window.location.origin}/verify-email` });
+    if (userProfile?.role === 'admin') return { skipped: true };
+    const returnsToApp = await sendVerificationWithFallback(auth.currentUser);
+    return { returnsToApp };
   }
 
   async function refreshAuthUser() {

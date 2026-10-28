@@ -98,6 +98,7 @@ export function authErrorMessage(code) {
     'auth/wrong-password': 'Incorrect password. Please try again.',
     'auth/invalid-credential': 'Incorrect email or password.',
     'auth/too-many-requests': 'Too many attempts. Please try again later.',
+    'auth/unauthorized-continue-uri': 'This website is not authorized as an email-action return domain. Add its hostname in Firebase Authentication > Settings > Authorized domains.',
     'auth/network-request-failed': 'Network error. Check your connection.',
     'auth/weak-password': 'Password must be at least 6 characters.',
     'auth/operation-not-allowed': 'Email/Password sign-in is not enabled. Please enable it in your Firebase Console under Authentication > Sign-in method.',

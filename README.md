@@ -62,6 +62,7 @@ Output is in `dist/`.
 
 1. Go to **Firebase Console → Authentication → Sign-in method**
 2. Enable **Email/Password**
+3. In **Authentication → Settings → Authorized domains**, add the hostname where LabTrack is deployed (and `localhost` for local development). Email verification and password-reset links use this domain to return to the app.
 
 ### 2. Firestore Database
 
@@ -94,6 +95,7 @@ firebase deploy --only firestore
 ### 5. Authentication email branding and student LRNs
 
 - New student accounts require a unique 12-digit LRN and an email verification link.
+- Accounts with an administrator role in `users/{uid}` can sign in without email verification; new public registrations remain student accounts and must verify.
 - In **Firebase Console → Authentication → Templates**, set the email verification and password reset sender/subject text to LabTrack. For password reset, set the subject to **Reset your password for LabTrack**. The app returns students to the LabTrack sign-in page after the Firebase action completes.
 - In **Project settings → General**, set the public-facing project name to **LabTrack** so Firebase’s default template uses the app name instead of the project ID.
 - Firebase's built-in template does not offer a control for replacing the long action URL with custom clickable text. To show a short label such as **Reset your password here**, use a custom email sender/template and generate the secure reset link with the Firebase Admin SDK. The built-in template can still be branded with its available subject and message fields.

@@ -43,9 +43,11 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await resetPassword(email);
+      const result = await resetPassword(email);
       setResetSent(true);
-      toast.success('Password reset email sent!');
+      toast.success(result?.returnsToApp === false
+        ? 'Reset email sent. Complete the reset on Firebase’s page, then return here to sign in.'
+        : 'Password reset email sent!');
     } catch (err) {
       setError(parseFirebaseError(err));
     } finally {

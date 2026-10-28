@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export default function VerifyEmail() {
-  const { currentUser, refreshAuthUser, resendVerificationEmail, logout } = useAuth();
+  const { currentUser, isAdmin, refreshAuthUser, resendVerificationEmail, logout } = useAuth();
   const toast = useToast();
   const location = useLocation();
   const navigate = useNavigate();
@@ -14,7 +14,7 @@ export default function VerifyEmail() {
   const [error, setError] = useState('');
 
   if (!currentUser) return <Navigate to="/login" replace />;
-  if (currentUser.emailVerified || verified) return <Navigate to="/" replace />;
+  if (currentUser.emailVerified || isAdmin || verified) return <Navigate to="/" replace />;
 
   async function checkVerification() {
     setBusy(true);
@@ -39,8 +39,10 @@ export default function VerifyEmail() {
     setBusy(true);
     setError('');
     try {
-      await resendVerificationEmail();
-      toast.success('A new verification link has been sent.');
+      const result = await resendVerificationEmail();
+      toast.success(result?.returnsToApp === false
+        ? 'Verification link sent. After confirming it on Firebase’s page, return here and check your verification.'
+        : 'A new verification link has been sent.');
     } catch (err) {
       setError(err.message || 'Could not send the verification email.');
     } finally {
@@ -64,6 +66,11 @@ export default function VerifyEmail() {
           {location.state?.verificationSent === false ? 'We could not send the first verification email. Request a new link for ' : 'We sent a verification link to '}
           <strong>{currentUser.email}</strong>. Verify your email before using LabTrack.
         </p>
+        {location.state?.verificationReturnsToApp === false && (
+          <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+            The link will open Firebase’s verification page. After confirming, return to this tab and choose “I have verified my email.” Add this website’s domain to Firebase Authentication’s authorized domains to enable the automatic return link.
+          </p>
+        )}
         {error && <p role="alert" className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{error}</p>}
         <div className="mt-6 space-y-2">
           <button onClick={checkVerification} disabled={busy} className="btn-primary w-full justify-center">
