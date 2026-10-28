@@ -11,7 +11,7 @@ export default function VerifyEmail() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [verified, setVerified] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(location.state?.verificationError || '');
 
   if (!currentUser) return <Navigate to="/login" replace />;
   if (currentUser.emailVerified || isAdmin || verified) return <Navigate to="/" replace />;
@@ -63,8 +63,14 @@ export default function VerifyEmail() {
         </div>
         <h1 className="text-xl font-bold text-gray-900">Verify your email</h1>
         <p className="text-sm text-gray-600 mt-2">
-          {location.state?.verificationSent === false ? 'We could not send the first verification email. Request a new link for ' : 'We sent a verification link to '}
-          <strong>{currentUser.email}</strong>. Verify your email before using LabTrack.
+          {location.state?.verificationSent === true
+            ? 'A verification link was sent to '
+            : location.state?.verificationSent === false
+              ? 'We could not send a verification link to '
+              : location.state?.verificationCooldown
+                ? 'A recent verification email was already requested for '
+                : 'Your email is not verified yet. Request a verification link for '}
+          <strong>{currentUser.email}</strong>. Verify it before using LabTrack.
         </p>
         {location.state?.verificationReturnsToApp === false && (
           <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5">

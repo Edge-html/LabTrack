@@ -15,6 +15,33 @@ import { auth, db, firebaseConfigured } from '../lib/firebase';
 import { parseFirebaseError, isValidGradeLevel } from '../lib/helpers';
 
 const AuthContext = createContext(null);
+const AUTO_VERIFY_COOLDOWN_MS = 10 * 60 * 1000;
+const verificationAttemptsInMemory = new Map();
+
+function verificationAttemptKey(uid) {
+  return `labtrack:verification-attempt:${uid}`;
+}
+
+function hasRecentVerificationAttempt(uid) {
+  const inMemoryTime = verificationAttemptsInMemory.get(uid) || 0;
+  try {
+    const attemptedAt = Number(localStorage.getItem(verificationAttemptKey(uid)) || 0);
+    const latestAttempt = Math.max(attemptedAt, inMemoryTime);
+    return latestAttempt > 0 && Date.now() - latestAttempt < AUTO_VERIFY_COOLDOWN_MS;
+  } catch {
+    return inMemoryTime > 0 && Date.now() - inMemoryTime < AUTO_VERIFY_COOLDOWN_MS;
+  }
+}
+
+function recordVerificationAttempt(uid) {
+  const attemptedAt = Date.now();
+  verificationAttemptsInMemory.set(uid, attemptedAt);
+  try {
+    localStorage.setItem(verificationAttemptKey(uid), String(attemptedAt));
+  } catch {
+    // Storage may be disabled; Firebase remains the source of truth.
+  }
+}
 
 async function sendVerificationWithFallback(user) {
   try {
@@ -119,7 +146,48 @@ export function AuthProvider({ children }) {
   }
 
   async function login(email, password) {
-    await signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    const user = credential.user;
+    setCurrentUser(user);
+
+    // Admin access is granted by the protected Firestore role, not by email address.
+    let role = null;
+    try {
+      const profile = await getDoc(doc(db, 'users', user.uid));
+      if (profile.exists()) {
+        const data = profile.data();
+        role = data.role;
+        setUserProfile({ uid: user.uid, ...data });
+      } else {
+        setUserProfile(null);
+      }
+    } catch (error) {
+      console.error('Could not load the signed-in user profile:', error);
+    }
+    if (user.emailVerified) return { needsVerification: false };
+    if (role === 'admin') return { needsVerification: false, isAdmin: true };
+
+    if (hasRecentVerificationAttempt(user.uid)) {
+      return {
+        needsVerification: true,
+        verificationSent: null,
+        verificationCooldown: true,
+      };
+    }
+
+    // Record before sending so repeat logins do not hammer Firebase if it fails.
+    recordVerificationAttempt(user.uid);
+    try {
+      const verificationReturnsToApp = await sendVerificationWithFallback(user);
+      return { needsVerification: true, verificationSent: true, verificationReturnsToApp };
+    } catch (error) {
+      console.error('Could not send a verification email during sign-in:', error);
+      return {
+        needsVerification: true,
+        verificationSent: false,
+        verificationError: parseFirebaseError(error),
+      };
+    }
   }
 
   async function logout() {
@@ -135,6 +203,7 @@ export function AuthProvider({ children }) {
   async function resendVerificationEmail() {
     if (!auth.currentUser) throw new Error('Sign in first to request a verification email.');
     if (userProfile?.role === 'admin') return { skipped: true };
+    recordVerificationAttempt(auth.currentUser.uid);
     const returnsToApp = await sendVerificationWithFallback(auth.currentUser);
     return { returnsToApp };
   }

@@ -29,8 +29,20 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      navigate(from, { replace: true });
+      const result = await login(email, password);
+      if (result?.needsVerification) {
+        navigate('/verify-email', {
+          replace: true,
+          state: {
+            verificationSent: result.verificationSent,
+            verificationReturnsToApp: result.verificationReturnsToApp,
+            verificationCooldown: result.verificationCooldown,
+            verificationError: result.verificationError,
+          },
+        });
+      } else {
+        navigate(from, { replace: true });
+      }
     } catch (err) {
       setError(parseFirebaseError(err));
     } finally {

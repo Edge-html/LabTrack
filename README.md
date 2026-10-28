@@ -95,6 +95,7 @@ firebase deploy --only firestore
 ### 5. Authentication email branding and student LRNs
 
 - New student accounts require a unique 12-digit LRN and an email verification link.
+- Signing into an unverified student account automatically requests a verification email. Automatic sends are throttled per browser for 10 minutes; the Verify Email page still offers a manual resend.
 - Accounts with an administrator role in `users/{uid}` can sign in without email verification; new public registrations remain student accounts and must verify.
 - In **Firebase Console → Authentication → Templates**, set the email verification and password reset sender/subject text to LabTrack. For password reset, set the subject to **Reset your password for LabTrack**. The app returns students to the LabTrack sign-in page after the Firebase action completes.
 - The app includes a custom handler at `/auth/action` for verification, password reset, and email recovery. To use it instead of Firebase’s default `firebaseapp.com` action page, set the action URL in each Authentication email template to `https://<your-LabTrack-domain>/auth/action`. If Firebase Console reports template editing is unavailable, contact Firebase Support to enable template changes. Firebase documents this custom action URL setup [here](https://firebase.google.com/docs/auth/custom-email-handler).
