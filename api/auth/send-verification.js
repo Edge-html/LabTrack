@@ -18,13 +18,15 @@ class HttpError extends Error {
 function getRequiredEnvironment() {
   const serviceAccountValue = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_JSON
     || process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const brevoApiKey = process.env.BREVO_API_KEY;
   const smtpHost = process.env.SMTP_HOST;
   const smtpPort = Number(process.env.SMTP_PORT || 0);
   const smtpUser = process.env.SMTP_USER;
   const smtpPassword = process.env.SMTP_PASSWORD;
   const emailFrom = process.env.EMAIL_FROM;
+  const hasSmtpSettings = Boolean(smtpHost && smtpPort && smtpUser && smtpPassword);
 
-  if (!serviceAccountValue || !smtpHost || !smtpPort || !smtpUser || !smtpPassword || !emailFrom) {
+  if (!serviceAccountValue || (!brevoApiKey && !hasSmtpSettings) || !emailFrom) {
     throw new HttpError(503, 'email-delivery-not-configured', 'Custom verification email delivery is not configured.');
   }
 
@@ -52,6 +54,8 @@ function getRequiredEnvironment() {
 
   return {
     serviceAccount,
+    brevoApiKey,
+    mailProvider: brevoApiKey ? 'brevo' : 'smtp',
     smtpHost,
     smtpPort,
     smtpUser,
@@ -63,6 +67,16 @@ function getRequiredEnvironment() {
     replyTo: process.env.EMAIL_REPLY_TO || undefined,
     appOrigin: appUrl.origin,
   };
+}
+
+function parseMailbox(value, fallbackName) {
+  const mailbox = String(value || '').trim();
+  const namedMailbox = mailbox.match(/^(?:"?([^"<]+?)"?\s*)?<([^<>]+)>$/);
+  if (namedMailbox) {
+    const name = namedMailbox[1]?.trim() || fallbackName;
+    return { ...(name ? { name } : {}), email: namedMailbox[2].trim() };
+  }
+  return { ...(fallbackName ? { name: fallbackName } : {}), email: mailbox };
 }
 
 function getAdminApp(serviceAccount) {
@@ -155,34 +169,61 @@ export default async function handler(request, response) {
       handleCodeInApp: false,
     });
     const actionUrl = makeLabTrackActionUrl(generatedLink, config.appOrigin);
-    const transporter = nodemailer.createTransport({
-      host: config.smtpHost,
-      port: config.smtpPort,
-      secure: config.smtpSecure,
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000,
-      auth: { user: config.smtpUser, pass: config.smtpPassword },
-    });
     const displayName = user.displayName ? ' ' + escapeHtml(user.displayName) : '';
+    const plainText = 'Hello' + (user.displayName ? ' ' + user.displayName : '') + ',\n\n'
+      + 'Please verify your email address for LabTrack by opening this link:\n'
+      + actionUrl + '\n\n'
+      + 'If you did not create a LabTrack account, you can ignore this email.\n\nLabTrack';
+    const htmlContent = '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.6">'
+      + '<p>Hello' + displayName + ',</p>'
+      + '<p>Please verify your email address to finish creating your LabTrack account.</p>'
+      + '<p><a href="' + escapeHtml(actionUrl) + '" style="display:inline-block;padding:12px 18px;'
+      + 'background:#a30f17;color:#ffffff;text-decoration:none;border-radius:8px">Verify your email</a></p>'
+      + '<p>If you did not create a LabTrack account, you can ignore this email.</p>'
+      + '<p>LabTrack</p></body></html>';
 
-    await transporter.sendMail({
-      from: config.emailFrom,
-      to: user.email,
-      replyTo: config.replyTo,
-      subject: 'Verify your email for LabTrack',
-      text: 'Hello' + (user.displayName ? ' ' + user.displayName : '') + ',\n\n'
-        + 'Please verify your email address for LabTrack by opening this link:\n'
-        + actionUrl + '\n\n'
-        + 'If you did not create a LabTrack account, you can ignore this email.\n\nLabTrack',
-      html: '<!doctype html><html><body style="font-family:Arial,sans-serif;color:#1f2937;line-height:1.6">'
-        + '<p>Hello' + displayName + ',</p>'
-        + '<p>Please verify your email address to finish creating your LabTrack account.</p>'
-        + '<p><a href="' + escapeHtml(actionUrl) + '" style="display:inline-block;padding:12px 18px;'
-        + 'background:#a30f17;color:#ffffff;text-decoration:none;border-radius:8px">Verify your email</a></p>'
-        + '<p>If you did not create a LabTrack account, you can ignore this email.</p>'
-        + '<p>LabTrack</p></body></html>',
-    });
+    if (config.mailProvider === 'brevo') {
+      const payload = {
+        sender: parseMailbox(config.emailFrom, 'LabTrack'),
+        to: [{ email: user.email, ...(user.displayName ? { name: user.displayName } : {}) }],
+        subject: 'Verify your email for LabTrack',
+        textContent: plainText,
+        htmlContent,
+      };
+      if (config.replyTo) payload.replyTo = parseMailbox(config.replyTo);
+
+      const providerResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': config.brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!providerResponse.ok) {
+        console.error('Brevo verification email request failed with status:', providerResponse.status);
+        throw new HttpError(502, 'mail-provider-send-failed', 'The email provider could not send the verification email.');
+      }
+    } else {
+      const transporter = nodemailer.createTransport({
+        host: config.smtpHost,
+        port: config.smtpPort,
+        secure: config.smtpSecure,
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
+        auth: { user: config.smtpUser, pass: config.smtpPassword },
+      });
+
+      await transporter.sendMail({
+        from: config.emailFrom,
+        to: user.email,
+        replyTo: config.replyTo,
+        subject: 'Verify your email for LabTrack',
+        text: plainText,
+        html: htmlContent,
+      });
+    }
 
     return response.status(200).json({ sent: true, delivery: 'labtrack' });
   } catch (error) {
