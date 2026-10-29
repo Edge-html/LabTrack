@@ -108,7 +108,7 @@ firebase deploy --only firestore
 - Firebase's built-in template can still be branded in **Firebase Console → Authentication → Templates**. The subject can be set to **Verify your email for LabTrack** or **Reset your password for LabTrack**. The custom mailer controls verification email branding independently of those templates. Password reset emails still use Firebase's built-in delivery unless a separate custom reset mailer is configured.
 - In **Project settings → General**, set the public-facing project name to **LabTrack** so Firebase’s default template uses the app name instead of the project ID.
 - The verification email sent by the custom mailer uses a short clickable label instead of displaying the full action URL. Password reset still uses Firebase's built-in message and template.
-- Existing student profiles need their LRN added by an administrator in **Admin Settings → Users & Roles** before they can submit new requests or bookings. The admin editor reserves the LRN uniquely.
+- Existing students can add a missing LRN, grade, and section from **Profile** before submitting requests or bookings. The app reserves LRNs uniquely; administrators can correct an LRN that is already assigned.
 
 ### 6. Free scheduled cancellation of expired room bookings
 
