@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  BarChart2, Search, ChevronDown, Check, X, Edit2, Trash2,
+  BarChart2, Search, Check, X, Trash2,
   AlertTriangle, Package, Clock,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
@@ -13,7 +13,7 @@ import {
   where, getDocs, increment,
   startAfter,
 } from 'firebase/firestore';
-import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
+import { formatDate, formatTimestamp, timeAgo, toDate } from '../../lib/helpers';
 import { StatusBadge } from '../../components/StatusBadge';
 import DeleteWithBackupDialog from '../../components/DeleteWithBackupDialog';
 import { TableSkeleton } from '../../components/LoadingSpinner';
@@ -23,6 +23,39 @@ import { downloadRequestHistoryBackup } from '../../lib/historyBackup';
 
 const TABS = ['Pending', 'All Requests'];
 const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'return_submitted', 'return_flagged', 'returned'];
+const SORT_OPTIONS = [
+  ['requested-desc', 'Date requested: newest first'],
+  ['requested-asc', 'Date requested: oldest first'],
+  ['student-asc', 'Student: A–Z'],
+  ['student-desc', 'Student: Z–A'],
+  ['experiment-asc', 'Experiment: A–Z'],
+  ['experiment-desc', 'Experiment: Z–A'],
+  ['experiment-date-asc', 'Experiment date: earliest first'],
+  ['experiment-date-desc', 'Experiment date: latest first'],
+];
+
+function compareRequests(a, b, sortBy) {
+  const [field, direction] = sortBy.endsWith('-desc') ? [sortBy.slice(0, -5), -1] : [sortBy.slice(0, -4), 1];
+  let comparison = 0;
+
+  if (field === 'student' || field === 'experiment') {
+    const property = field === 'student' ? 'borrowerName' : 'experiment';
+    const left = String(a[property] || '').trim();
+    const right = String(b[property] || '').trim();
+    if (!left && right) return 1;
+    if (left && !right) return -1;
+    comparison = left.localeCompare(right, undefined, { sensitivity: 'base' });
+  } else {
+    const property = field === 'experiment-date' ? 'experimentDate' : null;
+    const left = toDate(property ? a[property] : (a.createdAt || a.requestDate))?.getTime() ?? null;
+    const right = toDate(property ? b[property] : (b.createdAt || b.requestDate))?.getTime() ?? null;
+    if (left === null && right !== null) return 1;
+    if (left !== null && right === null) return -1;
+    comparison = (left || 0) - (right || 0);
+  }
+
+  return (comparison * direction) || String(a.id || '').localeCompare(String(b.id || ''));
+}
 
 function RejectModal({ request, onClose, onConfirm }) {
   const [reason, setReason] = useState('');
@@ -132,6 +165,7 @@ export default function ManageRequests() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [sortBy, setSortBy] = useState('requested-desc');
   const [rejectTarget, setRejectTarget] = useState(null);
   const [approveTarget, setApproveTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -192,7 +226,7 @@ export default function ManageRequests() {
       r.status?.toLowerCase().includes(q);
     const matchStatus = !statusFilter || r.status === statusFilter;
     return matchSearch && matchStatus;
-  });
+  }).sort((a, b) => compareRequests(a, b, sortBy));
 
   async function handleApprove(request, adjustedItems, remarks) {
     try {
@@ -447,6 +481,19 @@ export default function ManageRequests() {
               ))}
             </select>
           )}
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <span className="shrink-0">Sort:</span>
+            <select
+              className="input w-auto min-w-[190px]"
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value)}
+              aria-label="Sort requests"
+            >
+              {SORT_OPTIONS.map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {loading ? (
