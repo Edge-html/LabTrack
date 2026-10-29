@@ -248,7 +248,22 @@ export default function ManageLabBookings() {
             };
       const bookingRef = doc(db, 'labBookings', booking.id);
       const calendarRef = doc(db, 'labBookingCalendar', booking.id);
-      const mutexRef = doc(db, 'labBookingMutex', roomBookingMutexId(booking.bookingDate, booking.labRoom));
+      const bookingBefore = await getDoc(bookingRef);
+      if (!bookingBefore.exists() || bookingBefore.data().status !== 'pending') {
+        throw new Error('This booking is no longer pending. Refresh the page and try again.');
+      }
+      const observedBooking = bookingBefore.data();
+      const mutexRef = doc(db, 'labBookingMutex', roomBookingMutexId(observedBooking.bookingDate, observedBooking.labRoom));
+      const mutexBefore = await getDoc(mutexRef);
+      const observedRevision = Number(mutexBefore.data()?.revision) || 0;
+      const scheduleSnap = action === 'approve'
+        ? await getDocs(query(
+            collection(db, 'labBookingCalendar'),
+            where('bookingDate', '==', observedBooking.bookingDate),
+            where('labRoom', '==', observedBooking.labRoom),
+          ))
+        : null;
+
       await runTransaction(db, async transaction => {
         // Serialize admin approvals with student submissions for this room/date.
         const mutexSnap = await transaction.get(mutexRef);
@@ -257,11 +272,13 @@ export default function ManageLabBookings() {
           throw new Error('This booking is no longer pending. Refresh the page and try again.');
         }
         const current = currentSnap.data();
-        const scheduleSnap = await transaction.get(query(
-          collection(db, 'labBookingCalendar'),
-          where('bookingDate', '==', current.bookingDate),
-          where('labRoom', '==', current.labRoom),
-        ));
+        if (current.bookingDate !== observedBooking.bookingDate || current.labRoom !== observedBooking.labRoom) {
+          throw new Error('This booking changed while it was being reviewed. Refresh the page and try again.');
+        }
+        const currentRevision = Number(mutexSnap.data()?.revision) || 0;
+        if (currentRevision !== observedRevision) {
+          throw new Error('Room availability changed while this booking was being reviewed. Refresh the page and try again.');
+        }
         if (action === 'approve') {
           const conflict = scheduleSnap.docs.find(item => {
             if (item.id === booking.id) return false;
@@ -274,7 +291,7 @@ export default function ManageLabBookings() {
           }
         }
 
-        const revision = (Number(mutexSnap.data()?.revision) || 0) + 1;
+        const revision = currentRevision + 1;
         transaction.update(bookingRef, patch);
         transaction.set(calendarRef, labBookingCalendarEntry({ ...current, status: patch.status }));
         transaction.set(mutexRef, {

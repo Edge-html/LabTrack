@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import {
-  collection, query, where, getDocs, doc, runTransaction, serverTimestamp,
+  collection, query, where, getDoc, getDocs, doc, runTransaction, serverTimestamp,
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, formatTimeOfDay, isValidGradeLevel,
@@ -167,21 +167,30 @@ export default function LabBooking() {
         updatedAt: serverTimestamp(),
       };
 
+      // Query reads are not supported inside Web SDK transactions. Snapshot the
+      // room schedule first, then verify its room/date mutex revision in the
+      // transaction so a concurrent booking cannot slip into the same slot.
+      const mutexBefore = await getDoc(mutexRef);
+      const observedRevision = Number(mutexBefore.data()?.revision) || 0;
+      const scheduleSnap = await getDocs(query(
+        collection(db, 'labBookingCalendar'),
+        where('bookingDate', '==', form.bookingDate),
+        where('labRoom', '==', form.labRoom),
+      ));
+      const hasConflict = scheduleSnap.docs.some(item => {
+        const scheduled = item.data();
+        return LAB_BOOKING_BLOCKING_STATUSES.includes(scheduled.status) &&
+          timesOverlap(form.startTime, form.endTime, scheduled.startTime, scheduled.endTime);
+      });
+      if (hasConflict) throw new Error('That time slot was just reserved. Please choose another time.');
+
       await runTransaction(db, async transaction => {
         const mutexSnap = await transaction.get(mutexRef);
-        const scheduleSnap = await transaction.get(query(
-          collection(db, 'labBookingCalendar'),
-          where('bookingDate', '==', form.bookingDate),
-          where('labRoom', '==', form.labRoom),
-        ));
-        const hasConflict = scheduleSnap.docs.some(item => {
-          const scheduled = item.data();
-          return LAB_BOOKING_BLOCKING_STATUSES.includes(scheduled.status) &&
-            timesOverlap(form.startTime, form.endTime, scheduled.startTime, scheduled.endTime);
-        });
-        if (hasConflict) throw new Error('That time slot was just reserved. Please choose another time.');
-
-        const revision = (Number(mutexSnap.data()?.revision) || 0) + 1;
+        const currentRevision = Number(mutexSnap.data()?.revision) || 0;
+        if (currentRevision !== observedRevision) {
+          throw new Error('Room availability changed while you were submitting. Refresh the availability and try again.');
+        }
+        const revision = currentRevision + 1;
         transaction.set(bookingRef, booking);
         transaction.set(calendarRef, labBookingCalendarEntry(booking));
         transaction.set(mutexRef, {
