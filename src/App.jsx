@@ -26,6 +26,8 @@ const PenaltiesViolations = lazy(() => import('./pages/admin/PenaltiesViolations
 const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'));
 const ManageLabBookings = lazy(() => import('./pages/admin/ManageLabBookings'));
 const Warnings = lazy(() => import('./pages/admin/Warnings'));
+const AdminActivity = lazy(() => import('./pages/admin/AdminActivity'));
+const Reports = lazy(() => import('./pages/admin/Reports'));
 
 // Guards
 import { RequireAuth, RequireAdmin } from './components/RouteGuards';
@@ -104,6 +106,8 @@ export default function App() {
                 <Route path="/admin/penalties" element={<PenaltiesViolations />} />
                 <Route path="/admin/warnings" element={<Warnings />} />
                 <Route path="/admin/settings" element={<AdminSettings />} />
+                <Route path="/admin/activity" element={<AdminActivity />} />
+                <Route path="/admin/reports" element={<Reports />} />
               </Route>
             </Route>
 

@@ -2,14 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   FileText, User, FlaskConical, Package, Info, AlertTriangle,
-  ArrowLeft, Camera, Clock, ShieldAlert, Loader2,
+  ArrowLeft, Camera, Clock, ShieldAlert, Loader2, DoorOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import { doc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import {
-  formatDate, formatTimestamp, timeAgo, getTodayManila,
+  formatDate, formatTimestamp, formatTimeOfDay, timeAgo, getEquipmentDueState,
 } from '../lib/helpers';
 import { StatusBadge } from '../components/StatusBadge';
 import { PageLoader } from '../components/LoadingSpinner';
@@ -82,12 +82,11 @@ export default function RequestDetails() {
     );
   }
 
-  const today = getTodayManila();
   const hasReturnProof = Boolean(
     request.returnProofMeta?.count || request.returnProof?.dataUrl || request.returnProof?.photos?.length
   );
-  const isOverdueFlag = ['borrowed', 'approved', 'return_submitted', 'return_flagged'].includes(request.status) &&
-    request.expectedReturnDate < today;
+  const dueState = getEquipmentDueState(request.status, request.expectedReturnDate, request.expectedReturnTime);
+  const isOverdueFlag = dueState?.kind === 'overdue';
 
   return (
     <div className="max-w-3xl mx-auto space-y-4 animate-fade-in">
@@ -153,11 +152,16 @@ export default function RequestDetails() {
           <div className="text-right">
             <p className="text-xs text-gray-500">Due Date</p>
             <p className={`font-semibold ${isOverdueFlag ? 'text-red-600' : 'text-primary-700'}`}>
-              {formatDate(request.expectedReturnDate)}
+              {formatDate(request.expectedReturnDate)} · {formatTimeOfDay(request.expectedReturnTime || '12:00')}
             </p>
             {isOverdueFlag && (
               <p className="text-xs text-red-500 flex items-center gap-1 justify-end">
                 <AlertTriangle size={11} /> Overdue
+              </p>
+            )}
+            {dueState?.kind === 'due_soon' && (
+              <p className="text-xs text-amber-700 flex items-center gap-1 justify-end">
+                <Clock size={11} /> Due within 24 hours
               </p>
             )}
           </div>
@@ -174,6 +178,20 @@ export default function RequestDetails() {
           <TimelineStep label="Returned" at={request.returnedAt} />
         </div>
       </div>
+
+      {request.labBookingId && (
+        <div className="card border-sky-200">
+          <div className="card-header"><DoorOpen size={18} /> Related laboratory booking</div>
+          <div className="p-4 flex flex-wrap items-center gap-3">
+            <p className="flex-1 min-w-0 text-sm text-gray-700">
+              Equipment request linked to <strong>{request.labRoom || 'a laboratory room'}</strong>{request.experimentDate ? ` on ${formatDate(request.experimentDate)}` : ''}.
+            </p>
+            <Link to={isAdmin ? `/admin/lab-bookings?id=${request.labBookingId}` : `/my-lab-bookings?booking=${request.labBookingId}`} className="btn-secondary btn-sm">
+              View room booking
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Return proof */}
       {(hasReturnProof || request.status === 'return_submitted') && (

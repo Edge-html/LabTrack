@@ -4,14 +4,14 @@ import { formatTimestamp } from '../lib/helpers';
 
 /**
  * Shows the four timestamps that make up a laboratory booking's audit trail:
- * requested → approved → room used → room returned.
+ * requested → approved → occupied → done.
  */
 export default function BookingTimeline({ booking }) {
   const steps = [
     { label: 'Request Sent', at: booking.submittedAt || booking.createdAt },
     { label: 'Approved', at: booking.approvedAt },
-    { label: 'Room Used', at: booking.checkedInAt },
-    { label: 'Room Returned', at: booking.returnedAt },
+    { label: 'Occupied', at: booking.checkedInAt },
+    { label: 'Done', at: booking.returnedAt },
   ];
 
   return (

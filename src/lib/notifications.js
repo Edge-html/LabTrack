@@ -16,7 +16,7 @@
  * per-item flag, so it costs one field and never grows.
  */
 
-import { getTodayManila, formatDate } from './helpers';
+import { getTodayManila, formatDate, getEquipmentDueState } from './helpers';
 
 /** Anything at or before this many items back is ignored when rendering. */
 export const MAX_NOTIFICATIONS = 40;
@@ -95,7 +95,7 @@ function finish(items) {
  *
  * @param {{requests?: object[], bookings?: object[], warnings?: object[], penalties?: object[]}} data
  */
-export function buildStudentNotifications(data = {}) {
+export function buildStudentNotifications(data = {}, now = Date.now()) {
   const {
     requests = [], bookings = [], warnings = [], penalties = [],
   } = data || {};
@@ -201,6 +201,24 @@ export function buildStudentNotifications(data = {}) {
       default:
         break; // `pending` needs no notification — the student just submitted it.
     }
+
+    const dueState = getEquipmentDueState(r.status, r.expectedReturnDate, r.expectedReturnTime, now);
+    if (dueState) {
+      const dueLabel = `${formatDate(r.expectedReturnDate)}${r.expectedReturnTime ? ` by ${r.expectedReturnTime}` : ''}`;
+      items.push({
+        ...base,
+        id: `request-${r.id}-${dueState.kind}-${r.expectedReturnDate}-${r.expectedReturnTime || ''}`,
+        kind: dueState.kind,
+        tone: dueState.kind === 'overdue' ? 'danger' : 'warning',
+        title: dueState.kind === 'overdue' ? 'Equipment return is overdue' : 'Equipment return due within 24 hours',
+        body: dueState.kind === 'overdue'
+          ? `${itemSummary(r, 60)} was due ${dueLabel}. Return it or contact laboratory staff.`
+          : `${itemSummary(r, 60)} is due ${dueLabel}. Submit the return photo after handing it in.`,
+        to: `/requests/${r.id}`,
+        action: 'View return details',
+        at: dueState.kind === 'overdue' ? dueState.deadline : dueState.deadline - 24 * 60 * 60 * 1000,
+      });
+    }
   }
 
   for (const b of bookings) {
@@ -248,8 +266,10 @@ export function buildStudentNotifications(data = {}) {
           id: `booking-${b.id}-cancelled`,
           kind: 'booking_cancelled',
           tone: 'warning',
-          title: 'Laboratory booking cancelled',
-          body: `${b.labRoom || 'The laboratory'} on ${bookingWhen(b)} was cancelled.`,
+          title: b.cancellationReason === 'no_show' ? 'Laboratory booking marked no-show' : 'Laboratory booking cancelled',
+          body: b.cancellationReason === 'no_show'
+            ? `${b.labRoom || 'The laboratory'} on ${bookingWhen(b)} ended without a recorded check-in and was released.`
+            : `${b.labRoom || 'The laboratory'} on ${bookingWhen(b)} was cancelled.`,
           to,
           action: 'View booking',
           at: b.cancelledAt,
@@ -334,7 +354,7 @@ export function buildStudentNotifications(data = {}) {
  *   today?: string,
  * }} data
  */
-export function buildAdminNotifications(data = {}) {
+export function buildAdminNotifications(data = {}, now = Date.now()) {
   const {
     pendingRequests = [],
     returnProofs = [],
@@ -378,21 +398,20 @@ export function buildAdminNotifications(data = {}) {
   }
 
   for (const r of overdueReturns) {
-    const daysLate = Math.max(
-      0,
-      Math.round((msOf(today) - msOf(r.expectedReturnDate)) / 86400000),
-    );
+    const dueState = getEquipmentDueState(r.status, r.expectedReturnDate, r.expectedReturnTime, now);
+    if (!dueState) continue;
+    const daysLate = Math.max(0, Math.ceil((now - dueState.deadline) / 86400000));
     items.push({
       id: `request-${r.id}-overdue`,
       scope: 'request',
       refId: r.id,
       kind: 'overdue',
       tone: 'danger',
-      title: daysLate > 0 ? `Overdue by ${daysLate} day${daysLate > 1 ? 's' : ''}` : 'Due today',
-      body: `${studentLine(r)} still has ${itemSummary(r, 50)} — expected ${formatDate(r.expectedReturnDate)}.`,
+      title: dueState.kind === 'due_soon' ? 'Equipment return due within 24 hours' : daysLate > 0 ? `Overdue by ${daysLate} day${daysLate > 1 ? 's' : ''}` : 'Equipment return overdue',
+      body: `${studentLine(r)} still has ${itemSummary(r, 50)} — expected ${formatDate(r.expectedReturnDate)}${r.expectedReturnTime ? ` by ${r.expectedReturnTime}` : ''}.`,
       to: `/admin/borrowing?id=${r.id}`,
       action: 'Open in Borrowing & Returns',
-      at: r.expectedReturnDate,
+      at: dueState.deadline,
     });
   }
 

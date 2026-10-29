@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  DoorOpen, Search, Trash2, ArrowLeft, Info, Calendar,
+  DoorOpen, Search, Trash2, ArrowLeft, Info, Calendar, Package,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import {
-  collection, query, where, getDocs, doc, serverTimestamp, limit, writeBatch,
+  collection, query, where, getDocs, doc, serverTimestamp, limit, writeBatch, startAfter,
 } from 'firebase/firestore';
 import {
-  formatDate, formatTimeOfDay, formatTimestamp, timeAgo,
+  formatDate, formatTimeOfDay, formatTimestamp, timeAgo, bookingHasStarted,
 } from '../lib/helpers';
 import { LabStatusBadge } from '../components/StatusBadge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -31,6 +31,9 @@ export default function MyLabBookings() {
   const [statusFilter, setStatusFilter] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
   const [focusId, setFocusId] = useState(null);
+  const [historyCursor, setHistoryCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => { load(); }, [userProfile]);
 
@@ -44,13 +47,7 @@ export default function MyLabBookings() {
     if (!userProfile) return;
     setLoading(true);
     try {
-      const snap = await getDocs(
-        query(
-          collection(db, 'labBookings'),
-          where('userId', '==', userProfile.uid),
-          limit(100)
-        )
-      );
+      const snap = await getDocs(query(collection(db, 'labBookings'), where('userId', '==', userProfile.uid), limit(100)));
       const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       all.sort((a, b) => {
         const at = a.bookingDate || '';
@@ -59,11 +56,34 @@ export default function MyLabBookings() {
         return (b.startTime || '').localeCompare(a.startTime || '');
       });
       setBookings(all);
+      setHistoryCursor(snap.docs.at(-1) || null);
+      setHasMore(snap.size === 100);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load laboratory bookings.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    if (!userProfile || !historyCursor || !hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'labBookings'), where('userId', '==', userProfile.uid), startAfter(historyCursor), limit(100),
+      ));
+      const page = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setBookings(current => [...current, ...page].sort((a, b) => {
+        const dateOrder = (b.bookingDate || '').localeCompare(a.bookingDate || '');
+        return dateOrder || (b.startTime || '').localeCompare(a.startTime || '');
+      }));
+      setHistoryCursor(snap.docs.at(-1) || historyCursor);
+      setHasMore(snap.size === 100);
+    } catch (error) {
+      toast.error(`Could not load more laboratory bookings: ${error.message}`);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -80,11 +100,17 @@ export default function MyLabBookings() {
 
   async function handleCancel() {
     if (!cancelTarget) return;
+    if (cancelTarget.status === 'approved' && bookingHasStarted(cancelTarget)) {
+      toast.error('An approved booking cannot be cancelled after its start time. Contact laboratory staff.');
+      setCancelTarget(null);
+      return;
+    }
     try {
       const batch = writeBatch(db);
       batch.update(doc(db, 'labBookings', cancelTarget.id), {
         status: 'cancelled',
         cancelledAt: serverTimestamp(),
+        cancellationReason: 'student_cancelled',
         updatedAt: serverTimestamp(),
       });
       batch.update(doc(db, 'labBookingCalendar', cancelTarget.id), { status: 'cancelled' });
@@ -108,7 +134,7 @@ export default function MyLabBookings() {
         <div className="card border-gold/50">
           <div className="card-header">
             <Info size={18} strokeWidth={1.8} />
-            Booking You Were Warned About
+            Booking Details
             <button onClick={() => setFocusId(null)} className="ml-auto btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to all
             </button>
@@ -204,6 +230,7 @@ export default function MyLabBookings() {
                     </td>
                     <td data-label="Status">
                       <LabStatusBadge booking={b} />
+                      {b.cancellationReason === 'no_show' && <p className="mt-1 text-[11px] font-medium text-red-700">No-show</p>}
                       {b.returnedAt && (
                         <p className="text-[11px] text-gray-400 mt-1">
                           Room returned {formatTimestamp(b.returnedAt)}
@@ -211,14 +238,14 @@ export default function MyLabBookings() {
                       )}
                     </td>
                     <td>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
                         <button
                           onClick={() => setFocusId(b.id)}
                           className="btn-secondary btn-sm"
                         >
                           <Calendar size={13} /> Details
                         </button>
-                        {b.status === 'pending' && (
+                        {(b.status === 'pending' || (b.status === 'approved' && !b.checkedInAt && !bookingHasStarted(b))) && (
                           <button
                             onClick={() => setCancelTarget(b)}
                             className="btn-ghost btn-sm p-1.5 text-red-400 hover:bg-red-50"
@@ -226,6 +253,11 @@ export default function MyLabBookings() {
                           >
                             <Trash2 size={14} />
                           </button>
+                        )}
+                        {['pending', 'approved'].includes(b.status) && (
+                          <Link to={`/request?booking=${b.id}`} className="btn-secondary btn-sm">
+                            <Package size={13} /> Request equipment
+                          </Link>
                         )}
                       </div>
                     </td>
@@ -235,12 +267,19 @@ export default function MyLabBookings() {
             </table>
           </div>
         )}
+        {hasMore && !loading && filtered.length > 0 && (
+          <div className="p-4 border-t border-gray-100 text-center">
+            <button type="button" onClick={loadMore} disabled={loadingMore} className="btn-secondary btn-sm">
+              {loadingMore ? 'Loading…' : 'Load more bookings'}
+            </button>
+          </div>
+        )}
       </div>
 
       <ConfirmDialog
         isOpen={!!cancelTarget}
         title="Cancel Booking"
-        message={`Cancel your ${cancelTarget?.labRoom || ''} booking on ${formatDate(cancelTarget?.bookingDate)}?`}
+        message={`Cancel your ${cancelTarget?.labRoom || ''} booking on ${formatDate(cancelTarget?.bookingDate)}? This will release the room slot.`}
         confirmLabel="Cancel Booking"
         danger
         onConfirm={handleCancel}

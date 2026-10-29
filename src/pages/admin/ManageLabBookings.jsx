@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
-  DoorOpen, Search, Check, X, LogIn, LogOut, AlertTriangle, Loader2, FlaskConical, Trash2,
+  DoorOpen, Search, Check, X, LogIn, LogOut, AlertTriangle, Loader2, FlaskConical, Trash2, UserX,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
@@ -11,7 +11,7 @@ import {
   orderBy, startAfter,
 } from 'firebase/firestore';
 import {
-  formatDate, formatTimeOfDay, formatTimestamp, timeAgo, timesOverlap,
+  formatDate, formatTimeOfDay, formatTimestamp, timeAgo, timesOverlap, bookingHasEnded,
 } from '../../lib/helpers';
 import {
   LAB_BOOKING_BLOCKING_STATUSES, labBookingCalendarEntry, roomBookingMutexId,
@@ -19,6 +19,9 @@ import {
 import { LabStatusBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import BookingTimeline from '../../components/BookingTimeline';
+import DeleteWithBackupDialog from '../../components/DeleteWithBackupDialog';
+import { addAdminActivity } from '../../lib/adminActivity';
+import { downloadLabBookingHistoryBackup } from '../../lib/historyBackup';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 
 const TABS = ['Pending', 'Approved / In Use', 'History'];
@@ -140,6 +143,8 @@ export default function ManageLabBookings() {
   const [deleting, setDeleting] = useState(false);
   const [historyYear, setHistoryYear] = useState('');
   const [deleteYearTarget, setDeleteYearTarget] = useState('');
+  const [noShowTarget, setNoShowTarget] = useState(null);
+  const [noShowBusy, setNoShowBusy] = useState(false);
   const [historyCursor, setHistoryCursor] = useState(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
@@ -278,6 +283,11 @@ export default function ManageLabBookings() {
           labRoom: current.labRoom,
           revision,
         });
+        addAdminActivity(transaction, db, userProfile, {
+          action: patch.status, entityType: 'laboratory booking', entityId: booking.id,
+          summary: `${patch.status === 'approved' ? 'Approved' : 'Rejected'} ${current.studentName || 'student'}’s ${current.labRoom} booking for ${current.bookingDate}.`,
+          metadata: { userId: current.userId, bookingDate: current.bookingDate, labRoom: current.labRoom },
+        });
       });
       toast.success(action === 'approve' ? 'Booking approved.' : 'Booking rejected.');
       setDecision(null);
@@ -296,12 +306,45 @@ export default function ManageLabBookings() {
       const batch = writeBatch(db);
       batch.update(doc(db, 'labBookings', booking.id), patch);
       if (patch.status) batch.update(doc(db, 'labBookingCalendar', booking.id), { status: patch.status });
+      addAdminActivity(batch, db, userProfile, {
+        action: action === 'checkin' ? 'occupied' : 'done', entityType: 'laboratory booking', entityId: booking.id,
+        summary: `Marked ${booking.labRoom} booking for ${booking.studentName || 'student'} as ${action === 'checkin' ? 'occupied' : 'done'}.`,
+        metadata: { userId: booking.userId, bookingDate: booking.bookingDate },
+      });
       await batch.commit();
       toast.success(action === 'checkin' ? 'Room marked occupied.' : 'Room marked done.');
       setUseTarget(null);
       load();
     } catch (err) {
       toast.error('Failed: ' + err.message);
+    }
+  }
+
+  async function handleNoShow(booking) {
+    if (!booking || booking.checkedInAt || !bookingHasEnded(booking) || noShowBusy) return;
+    setNoShowBusy(true);
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'labBookings', booking.id), {
+        status: 'cancelled',
+        cancelledAt: serverTimestamp(),
+        cancellationReason: 'no_show',
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(doc(db, 'labBookingCalendar', booking.id), { status: 'cancelled' });
+      addAdminActivity(batch, db, userProfile, {
+        action: 'marked_no_show', entityType: 'laboratory booking', entityId: booking.id,
+        summary: `Marked ${booking.studentName || 'student'}’s ${booking.labRoom} booking on ${booking.bookingDate} as a no-show.`,
+        metadata: { userId: booking.userId, bookingDate: booking.bookingDate },
+      });
+      await batch.commit();
+      setNoShowTarget(null);
+      toast.success('Booking marked as no-show and the room slot released.');
+      await load();
+    } catch (error) {
+      toast.error(`Could not record the no-show: ${error.message}`);
+    } finally {
+      setNoShowBusy(false);
     }
   }
 
@@ -312,6 +355,11 @@ export default function ManageLabBookings() {
       const batch = writeBatch(db);
       batch.delete(doc(db, 'labBookings', deleteTarget.id));
       batch.delete(doc(db, 'labBookingCalendar', deleteTarget.id));
+      addAdminActivity(batch, db, userProfile, {
+        action: 'deleted', entityType: 'laboratory booking', entityId: deleteTarget.id,
+        summary: `Deleted ${deleteTarget.labRoom} booking history for ${deleteTarget.studentName || 'student'} on ${deleteTarget.bookingDate}.`,
+        metadata: { userId: deleteTarget.userId, bookingDate: deleteTarget.bookingDate },
+      });
       await batch.commit();
       setBookings(current => current.filter(booking => booking.id !== deleteTarget.id));
       if (details?.id === deleteTarget.id) setDetails(null);
@@ -349,6 +397,11 @@ export default function ManageLabBookings() {
           batch.delete(doc(db, 'labBookingCalendar', item.id));
           deletedIds.add(item.id);
         });
+        if (deleted === 0) addAdminActivity(batch, db, userProfile, {
+          action: 'deleted_year', entityType: 'laboratory booking history', entityId: year,
+          summary: `Started deleting laboratory booking history for ${year}.`,
+          metadata: { year },
+        });
         await batch.commit();
         deleted += snap.size;
       }
@@ -361,6 +414,27 @@ export default function ManageLabBookings() {
     } finally {
       setDeleting(false);
     }
+  }
+
+  async function downloadYearBackup(year) {
+    const records = [];
+    let cursor = null;
+    while (true) {
+      const constraints = [
+        where('status', 'in', STATUS_BY_TAB[2]),
+        where('bookingDate', '>=', `${year}-01-01`),
+        where('bookingDate', '<=', `${year}-12-31`),
+        orderBy('bookingDate', 'asc'),
+      ];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(225));
+      const snap = await getDocs(query(collection(db, 'labBookings'), ...constraints));
+      records.push(...snap.docs.map(item => ({ id: item.id, ...item.data() })));
+      if (snap.size < 225) break;
+      cursor = snap.docs.at(-1);
+    }
+    if (!records.length) throw new Error(`No laboratory booking history was found for ${year}.`);
+    await downloadLabBookingHistoryBackup(db, records, `labtrack_lab_bookings_${year}_backup.json`);
   }
 
   return (
@@ -499,6 +573,7 @@ export default function ManageLabBookings() {
                       </td>
                       <td data-label="Status">
                         <LabStatusBadge booking={b} />
+                        {b.cancellationReason === 'no_show' && <p className="mt-1 text-[11px] font-medium text-red-700">No-show</p>}
                       </td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
@@ -532,6 +607,11 @@ export default function ManageLabBookings() {
                               className="btn-primary btn-sm"
                             >
                               <LogOut size={13} /> Done
+                            </button>
+                          )}
+                          {b.status === 'approved' && !b.checkedInAt && bookingHasEnded(b) && (
+                            <button type="button" onClick={() => setNoShowTarget(b)} className="btn-danger btn-sm">
+                              <UserX size={13} /> Mark no-show
                             </button>
                           )}
                           {(b.status === 'rejected' || b.status === 'cancelled') && b.studentName && (
@@ -596,26 +676,34 @@ export default function ManageLabBookings() {
         />
       )}
       <ConfirmDialog
+        isOpen={!!noShowTarget}
+        title="Mark this booking as a no-show?"
+        message={noShowTarget ? `${noShowTarget.studentName} was not checked in for ${noShowTarget.labRoom} on ${formatDate(noShowTarget.bookingDate)}. This releases the slot and records a no-show in the history.` : ''}
+        confirmLabel="Mark no-show"
+        danger
+        busy={noShowBusy}
+        onCancel={() => setNoShowTarget(null)}
+        onConfirm={() => handleNoShow(noShowTarget)}
+      />
+      <DeleteWithBackupDialog
         isOpen={!!deleteTarget}
         title="Delete booking history?"
         message={deleteTarget
           ? `Permanently delete ${deleteTarget.studentName || 'this student'}’s ${deleteTarget.labRoom} booking for ${formatDate(deleteTarget.bookingDate)}? This cannot be undone.`
           : ''}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
         onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+        onDownload={() => downloadLabBookingHistoryBackup(db, [deleteTarget], `labtrack_lab_booking_${deleteTarget.id}_backup.json`)}
         onConfirm={handleDeleteBooking}
-        busy={deleting}
-        danger
+        deleting={deleting}
       />
-      <ConfirmDialog
+      <DeleteWithBackupDialog
         isOpen={!!deleteYearTarget}
         title={`Delete all ${deleteYearTarget} booking history?`}
         message={`Permanently delete every completed, rejected, or cancelled laboratory booking dated in ${deleteYearTarget}? This cannot be undone.`}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete year history'}
         onCancel={() => { if (!deleting) setDeleteYearTarget(''); }}
+        onDownload={() => downloadYearBackup(deleteYearTarget)}
         onConfirm={handleDeleteYear}
-        busy={deleting}
-        danger
+        deleting={deleting}
       />
     </div>
   );

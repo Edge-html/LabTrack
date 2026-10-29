@@ -8,15 +8,17 @@ import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   collection, query, where, getDocs, doc, runTransaction,
-  serverTimestamp, orderBy, limit, writeBatch,
+  serverTimestamp, orderBy, limit, writeBatch, startAfter,
 } from 'firebase/firestore';
 import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
 import { StatusBadge, ConditionBadge } from '../../components/StatusBadge';
 import { TableSkeleton } from '../../components/LoadingSpinner';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
+import DeleteWithBackupDialog from '../../components/DeleteWithBackupDialog';
 import ReturnProofCard from '../../components/ReturnProofCard';
 import { proofPhotos } from '../../lib/upload';
 import { ensureActiveEquipmentReservations, reservationDocumentId } from '../../lib/equipmentReservations';
+import { addAdminActivity } from '../../lib/adminActivity';
+import { downloadRequestHistoryBackup } from '../../lib/historyBackup';
 
 const ACTIVE_STATUSES = ['approved', 'borrowed', 'return_submitted', 'return_flagged'];
 const hasReturnProof = request => Boolean(request.returnProofMeta?.count || proofPhotos(request.returnProof).length);
@@ -32,13 +34,25 @@ function requestHistoryDeleteRefs(request) {
   ];
 }
 
-async function deleteRequestHistoryDocs(requestsToDelete) {
-  const refs = requestsToDelete.flatMap(requestHistoryDeleteRefs);
-  for (let offset = 0; offset < refs.length; offset += 450) {
-    const batch = writeBatch(db);
-    refs.slice(offset, offset + 450).forEach(ref => batch.delete(ref));
-    await batch.commit();
+async function deleteRequestHistoryDocs(requestsToDelete, userProfile) {
+  let batch = writeBatch(db);
+  let operations = 0;
+  for (const request of requestsToDelete) {
+    const refs = requestHistoryDeleteRefs(request);
+    if (operations + refs.length + 1 > 450) {
+      await batch.commit();
+      batch = writeBatch(db);
+      operations = 0;
+    }
+    refs.forEach(ref => batch.delete(ref));
+    addAdminActivity(batch, db, userProfile, {
+      action: 'deleted', entityType: 'equipment borrowing history', entityId: request.id,
+      summary: `Deleted returned equipment history for ${request.borrowerName || 'student'} (${request.experiment || 'experiment'}).`,
+      metadata: { userId: request.userId, actualReturnDate: request.actualReturnDate || '' },
+    });
+    operations += refs.length + 1;
   }
+  if (operations) await batch.commit();
 }
 
 /* ── Mark borrowed ────────────────────────────────────────────────────────── */
@@ -416,6 +430,10 @@ export default function BorrowingReturns() {
   const [deleteYear, setDeleteYear] = useState('');
   const [deleteYearTarget, setDeleteYearTarget] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [olderRequests, setOlderRequests] = useState([]);
+  const [historyCursor, setHistoryCursor] = useState(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
 
   const [tab, setTab] = useState(0);
 
@@ -439,6 +457,9 @@ export default function BorrowingReturns() {
 
   async function load() {
     setLoading(true);
+    setOlderRequests([]);
+    setHistoryCursor(null);
+    setHasMoreHistory(false);
     try {
       let q;
       if (tab === 0) {
@@ -453,6 +474,10 @@ export default function BorrowingReturns() {
       }
       const snap = await getDocs(q);
       setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (tab === 1) {
+        setHistoryCursor(snap.docs.at(-1) || null);
+        setHasMoreHistory(snap.size === 100);
+      }
     } catch (err) {
       console.error(err);
       toast.error('Failed to load requests.');
@@ -461,12 +486,31 @@ export default function BorrowingReturns() {
     }
   }
 
+  async function loadMoreHistory() {
+    if (tab !== 1 || !historyCursor || !hasMoreHistory || loadingMoreHistory) return;
+    setLoadingMoreHistory(true);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'requests'), where('status', '==', 'returned'),
+        orderBy('actualReturnDate', 'desc'), startAfter(historyCursor), limit(100),
+      ));
+      setOlderRequests(current => [...current, ...snap.docs.map(d => ({ id: d.id, ...d.data() }))]);
+      setHistoryCursor(snap.docs.at(-1) || historyCursor);
+      setHasMoreHistory(snap.size === 100);
+    } catch (error) {
+      toast.error(`Could not load more equipment history: ${error.message}`);
+    } finally {
+      setLoadingMoreHistory(false);
+    }
+  }
+
   async function handleDeleteHistory() {
     if (!deleteTarget || deleting) return;
     setDeleting(true);
     try {
-      await deleteRequestHistoryDocs([deleteTarget]);
+      await deleteRequestHistoryDocs([deleteTarget], userProfile);
       setRequests(current => current.filter(request => request.id !== deleteTarget.id));
+      setOlderRequests(current => current.filter(request => request.id !== deleteTarget.id));
       toast.success('Equipment borrowing history deleted.');
       setDeleteTarget(null);
     } catch (err) {
@@ -494,7 +538,7 @@ export default function BorrowingReturns() {
         ));
         if (snap.empty) break;
         const page = snap.docs.map(item => ({ id: item.id, ...item.data() }));
-        await deleteRequestHistoryDocs(page);
+        await deleteRequestHistoryDocs(page, userProfile);
         page.forEach(request => deletedIds.add(request.id));
         deleted += page.length;
         setRequests(current => current.filter(request => !deletedIds.has(request.id)));
@@ -510,7 +554,28 @@ export default function BorrowingReturns() {
     }
   }
 
-  const filtered = requests.filter(r => {
+  async function downloadYearBackup(year) {
+    const records = [];
+    let cursor = null;
+    while (true) {
+      const constraints = [
+        where('status', '==', 'returned'),
+        where('actualReturnDate', '>=', `${year}-01-01`),
+        where('actualReturnDate', '<=', `${year}-12-31`),
+        orderBy('actualReturnDate', 'desc'),
+      ];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(40));
+      const snap = await getDocs(query(collection(db, 'requests'), ...constraints));
+      records.push(...snap.docs.map(item => ({ id: item.id, ...item.data() })));
+      if (snap.size < 40) break;
+      cursor = snap.docs.at(-1);
+    }
+    if (!records.length) throw new Error(`No returned equipment history was found for ${year}.`);
+    await downloadRequestHistoryBackup(db, records, `labtrack_equipment_history_${year}_backup.json`);
+  }
+
+  const filtered = [...requests, ...olderRequests].filter(r => {
     const q = search.toLowerCase();
     return !q || r.borrowerName?.toLowerCase().includes(q) || r.experiment?.toLowerCase().includes(q);
   });
@@ -565,6 +630,11 @@ export default function BorrowingReturns() {
           items,
           updatedAt: serverTimestamp(),
         });
+        addAdminActivity(tx, db, userProfile, {
+          action: 'released', entityType: 'equipment request', entityId: request.id,
+          summary: `Released equipment to ${request.borrowerName || 'student'} for ${request.experiment || 'experiment'}.`,
+          metadata: { userId: request.userId },
+        });
       });
       toast.success('Marked as borrowed.');
       setBorrowTarget(null);
@@ -611,6 +681,11 @@ export default function BorrowingReturns() {
         items,
         returnReview: review,
         updatedAt: serverTimestamp(),
+      });
+      addAdminActivity(tx, db, userProfile, {
+        action: 'returned', entityType: 'equipment request', entityId: request.id,
+        summary: `Recorded return for ${request.borrowerName || 'student'}’s equipment request (${request.experiment || 'experiment'}).`,
+        metadata: { userId: request.userId, returnDate },
       });
     });
   }
@@ -690,6 +765,11 @@ export default function BorrowingReturns() {
           },
           staffRemarks: remarks,
           updatedAt: serverTimestamp(),
+        });
+        addAdminActivity(tx, db, userProfile, {
+          action: 'flagged_return', entityType: 'equipment request', entityId: request.id,
+          summary: `Flagged return proof for ${request.borrowerName || 'student'} (${request.experiment || 'experiment'}).`,
+          metadata: { userId: request.userId, verdict },
         });
       });
       setReviewTarget(null);
@@ -899,6 +979,13 @@ export default function BorrowingReturns() {
             </table>
           </div>
         )}
+        {tab === 1 && hasMoreHistory && !loading && (
+          <div className="p-4 border-t border-gray-100 text-center">
+            <button type="button" className="btn-secondary btn-sm" onClick={loadMoreHistory} disabled={loadingMoreHistory}>
+              {loadingMoreHistory ? 'Loading…' : 'Load more returned history'}
+            </button>
+          </div>
+        )}
       </div>
 
       {borrowTarget && (
@@ -966,27 +1053,25 @@ export default function BorrowingReturns() {
         </div>
       )}
 
-      <ConfirmDialog
+      <DeleteWithBackupDialog
         isOpen={!!deleteTarget}
         title="Delete equipment borrowing history?"
         message={deleteTarget
           ? `Permanently delete ${deleteTarget.borrowerName || 'this student'}’s returned request for ${deleteTarget.experiment || 'this equipment'}? Related return proof and reservation records will also be removed.`
           : ''}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
         onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+        onDownload={() => downloadRequestHistoryBackup(db, [deleteTarget], `labtrack_equipment_${deleteTarget.id}_backup.json`)}
         onConfirm={handleDeleteHistory}
-        busy={deleting}
-        danger
+        deleting={deleting}
       />
-      <ConfirmDialog
+      <DeleteWithBackupDialog
         isOpen={!!deleteYearTarget}
         title={`Delete all returned equipment history from ${deleteYearTarget}?`}
         message={`Permanently delete every equipment borrowing record returned in ${deleteYearTarget}, including its return proof and reservation records? This cannot be undone.`}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete year history'}
         onCancel={() => { if (!deleting) setDeleteYearTarget(''); }}
+        onDownload={() => downloadYearBackup(deleteYearTarget)}
         onConfirm={handleDeleteYearHistory}
-        busy={deleting}
-        danger
+        deleting={deleting}
       />
     </div>
   );

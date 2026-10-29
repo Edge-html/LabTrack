@@ -361,3 +361,12 @@ This seeds:
 - [ ] Firebase: Add Vercel domain to Authorized Domains
 - [ ] App: Sign in as admin → Settings → Seed Data → Load Starter Data
 - [ ] App: Sign in as a student → borrow equipment → confirm the **Return** button and photo upload work
+
+## Workflow improvements and release checks
+
+- Students can edit an equipment request while it is pending; its original submission timestamp is preserved.
+- A room booking can prefill and link a separate equipment request. Equipment availability remains tentative until staff approval, and availability is checked again when staff approve.
+- Student and admin histories are paginated. CSV reports are available under **Reports & Exports**; admin actions and automated no-show cleanup are recorded under **Admin Activity**.
+- History deletion requires a downloadable JSON backup first. Equipment backups include the request, return-proof record, and reservation records; lab-booking backups include the booking and calendar entry.
+- Equipment return reminders appear in the app within 24 hours of the due time and while overdue. The GitHub Actions cleanup marks approved lab bookings as no-show after their end time if they were never checked in; unreviewed pending bookings expire separately.
+- Use [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for preview and production smoke checks. Firestore rule changes must be deployed with Firebase CLI before the new student edit, cancellation, and activity-log paths work.

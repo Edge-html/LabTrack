@@ -59,6 +59,7 @@ export function addSchoolDays(dateStr, n) {
  */
 export function durationToDays(duration) {
   switch (duration) {
+    case 'Same day': return 0;
     case '1 day': return 1;
     case '2 days': return 2;
     case '3 days': return 3;
@@ -72,11 +73,18 @@ export function durationToDays(duration) {
  * Overdue = equipment is still out (approved / borrowed / return_submitted /
  * return_flagged) AND expectedReturnDate < today.
  */
-export function isOverdue(status, expectedReturnDate) {
-  if (!expectedReturnDate) return false;
-  if (!['borrowed', 'approved', 'return_submitted', 'return_flagged'].includes(status)) return false;
-  const today = getTodayManila();
-  return expectedReturnDate < today;
+export function getEquipmentDueState(status, expectedReturnDate, expectedReturnTime = '12:00', now = Date.now()) {
+  if (!expectedReturnDate || !['borrowed', 'return_submitted', 'return_flagged'].includes(status)) return null;
+  const deadline = manilaDateTimeMs(expectedReturnDate, expectedReturnTime || '12:00');
+  if (!deadline) return null;
+  const remainingMs = deadline - now;
+  if (remainingMs < 0) return { kind: 'overdue', deadline, remainingMs };
+  if (remainingMs <= 24 * 60 * 60 * 1000) return { kind: 'due_soon', deadline, remainingMs };
+  return null;
+}
+
+export function isOverdue(status, expectedReturnDate, expectedReturnTime) {
+  return getEquipmentDueState(status, expectedReturnDate, expectedReturnTime)?.kind === 'overdue';
 }
 
 /**
@@ -129,7 +137,7 @@ export function isValidGradeLevel(grade) {
   return str === 'Grade 11' || str === 'Grade 12' || str === '11' || str === '12';
 }
 
-export const DURATION_OPTIONS = ['1 day', '2 days', '3 days', '1 week', 'Custom'];
+export const DURATION_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '1 week', 'Custom'];
 
 export const STATUS_LABELS = {
   pending: 'Pending',
@@ -250,6 +258,21 @@ export function minutesOfDay(timeStr) {
   const [h, m] = String(timeStr).split(':').map(Number);
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return h * 60 + m;
+}
+
+/** Parse a LabTrack date/time using the school's Manila time zone. */
+export function manilaDateTimeMs(date, time = '00:00') {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !/^\d{2}:\d{2}$/.test(String(time || ''))) return 0;
+  const parsed = Date.parse(`${date}T${time}:00+08:00`);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function bookingHasEnded(booking, now = Date.now()) {
+  return manilaDateTimeMs(booking?.bookingDate, booking?.endTime) > 0 && manilaDateTimeMs(booking.bookingDate, booking.endTime) <= now;
+}
+
+export function bookingHasStarted(booking, now = Date.now()) {
+  return manilaDateTimeMs(booking?.bookingDate, booking?.startTime) > 0 && manilaDateTimeMs(booking.bookingDate, booking.startTime) <= now;
 }
 
 /**

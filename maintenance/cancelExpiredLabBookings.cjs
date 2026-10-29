@@ -48,7 +48,7 @@ async function cancelExpiredLabBookings() {
       transaction.update(bookingDoc.ref, {
         status: 'cancelled',
         cancelledAt: FieldValue.serverTimestamp(),
-        cancellationReason: 'Automatically cancelled because the booking time passed.',
+        cancellationReason: booking.status === 'approved' ? 'no_show' : 'expired_pending',
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(calendarRef, {
@@ -57,6 +57,18 @@ async function cancelExpiredLabBookings() {
         startTime: booking.startTime,
         endTime: booking.endTime,
         status: 'cancelled',
+      });
+      transaction.set(db.collection('adminActivity').doc(), {
+        actorUid: 'system',
+        actorName: 'LabTrack automated cleanup',
+        action: booking.status === 'approved' ? 'automatically_marked_no_show' : 'automatically_expired',
+        entityType: 'laboratory booking',
+        entityId: bookingDoc.id,
+        summary: booking.status === 'approved'
+          ? `Automatically marked ${booking.studentName || 'student'}’s ${booking.labRoom} booking on ${booking.bookingDate} as a no-show.`
+          : `Automatically cancelled the expired pending ${booking.labRoom} booking on ${booking.bookingDate}.`,
+        metadata: { userId: booking.userId || '', bookingDate: booking.bookingDate || '', labRoom: booking.labRoom || '' },
+        at: FieldValue.serverTimestamp(),
       });
       return true;
     });

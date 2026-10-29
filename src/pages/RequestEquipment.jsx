@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle,
   Calendar, User, BookOpen, Clock, Camera,
@@ -11,7 +11,7 @@ import { hasReservationOverlap, reservationWindow } from '../lib/equipmentReserv
 import { db } from '../lib/firebase';
 import {
   collection, getDocs, addDoc, serverTimestamp, onSnapshot,
-  query, orderBy, where, doc, getDoc,
+  query, orderBy, where, doc, getDoc, updateDoc,
 } from 'firebase/firestore';
 import {
   getTodayManila, formatDate, addDays, durationToDays,
@@ -24,6 +24,9 @@ export default function RequestEquipment() {
   const { userProfile } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
+  const bookingId = searchParams.get('booking');
   const today = getTodayManila();
 
   const [equipment, setEquipment] = useState([]);
@@ -49,6 +52,9 @@ export default function RequestEquipment() {
   const [lineErrors, setLineErrors] = useState([]);
   const [formErrors, setFormErrors] = useState({});
   const [lateWarning, setLateWarning] = useState(false);
+  const [editingRequest, setEditingRequest] = useState(null);
+  const [linkedBooking, setLinkedBooking] = useState(null);
+  const [prefillLoading, setPrefillLoading] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -79,6 +85,74 @@ export default function RequestEquipment() {
       setReservationError(true);
     },
   ), []);
+
+  useEffect(() => {
+    if (!userProfile?.uid || (!editId && !bookingId)) return;
+    let cancelled = false;
+    setPrefillLoading(true);
+    async function loadPrefill() {
+      try {
+        if (editId) {
+          const snap = await getDoc(doc(db, 'requests', editId));
+          if (!snap.exists() || snap.data().userId !== userProfile.uid || snap.data().status !== 'pending') {
+            toast.error('Only your pending requests can be edited.');
+            navigate('/my-requests', { replace: true });
+            return;
+          }
+          const request = { id: snap.id, ...snap.data() };
+          if (cancelled) return;
+          setEditingRequest(request);
+          setForm(current => ({
+            ...current,
+            requestDate: request.requestDate || current.requestDate,
+            experimentDate: request.experimentDate || '',
+            proposedBorrowTime: request.proposedBorrowTime || '08:00',
+            duration: DURATION_OPTIONS.includes(request.duration) ? request.duration : 'Custom',
+            customDays: /^\d+/.exec(request.duration || '')?.[0] || '',
+            expectedReturnDate: request.expectedReturnDate || '',
+            expectedReturnTime: request.expectedReturnTime || '12:00',
+            teacher: request.teacher || '',
+            experiment: request.experiment || '',
+          }));
+          const savedLines = (request.items || []).map(item => ({
+            equipmentId: item.equipmentId || '', name: item.name || '', qtyRequested: Number(item.qtyRequested) || 1,
+          }));
+          setLines(savedLines.length ? savedLines : [{ ...EMPTY_LINE }]);
+          if (request.labBookingId) {
+            const bookingSnap = await getDoc(doc(db, 'labBookings', request.labBookingId));
+            if (!cancelled && bookingSnap.exists()) setLinkedBooking({ id: bookingSnap.id, ...bookingSnap.data() });
+          }
+          return;
+        }
+        const snap = await getDoc(doc(db, 'labBookings', bookingId));
+        if (!snap.exists() || snap.data().userId !== userProfile.uid || !['pending', 'approved'].includes(snap.data().status)) {
+          toast.error('That laboratory booking cannot be linked to a new equipment request.');
+          navigate('/my-lab-bookings', { replace: true });
+          return;
+        }
+        const booking = { id: snap.id, ...snap.data() };
+        if (cancelled) return;
+        setLinkedBooking(booking);
+        setForm(current => ({
+          ...current,
+          experimentDate: booking.bookingDate,
+          proposedBorrowTime: booking.startTime,
+          duration: 'Same day',
+          expectedReturnDate: booking.bookingDate,
+          expectedReturnTime: booking.endTime,
+          teacher: booking.teacher || '',
+          experiment: booking.purpose || '',
+        }));
+      } catch (error) {
+        console.error('Could not load request prefill:', error);
+        toast.error('Could not load the selected request or booking.');
+      } finally {
+        if (!cancelled) setPrefillLoading(false);
+      }
+    }
+    loadPrefill();
+    return () => { cancelled = true; };
+  }, [userProfile?.uid, editId, bookingId]);
 
   async function safeGetDoc(col, id) {
     try {
@@ -224,7 +298,7 @@ export default function RequestEquipment() {
         };
       });
 
-      await addDoc(collection(db, 'requests'), {
+      const requestData = {
         userId: userProfile.uid,
         borrowerName: userProfile.name,
         studentId: userProfile.lrn || '',
@@ -244,11 +318,24 @@ export default function RequestEquipment() {
         staffRemarks: '',
         lateRequestFlag: lateWarning,
         items,
-        createdAt: serverTimestamp(),
+        labBookingId: linkedBooking?.id || editingRequest?.labBookingId || '',
+        labRoom: linkedBooking?.labRoom || editingRequest?.labRoom || '',
         updatedAt: serverTimestamp(),
-      });
+      };
 
-      toast.success('Request submitted successfully!');
+      if (editingRequest) {
+        await updateDoc(doc(db, 'requests', editingRequest.id), {
+          ...requestData,
+          studentEditedAt: serverTimestamp(),
+        });
+      } else {
+        await addDoc(collection(db, 'requests'), {
+          ...requestData,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      toast.success(editingRequest ? 'Pending request updated.' : 'Request submitted successfully!');
       navigate('/my-requests');
     } catch (err) {
       toast.error('Failed to submit: ' + err.message);
@@ -282,9 +369,19 @@ export default function RequestEquipment() {
       <div className="card">
         <div className="card-header">
           <ClipboardList size={18} strokeWidth={1.8} />
-          Request Equipment
+          {editingRequest ? 'Edit Pending Request' : 'Request Equipment'}
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
+          {linkedBooking && (
+            <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900" role="status">
+              Linked to <strong>{linkedBooking.labRoom}</strong> on <strong>{formatDate(linkedBooking.bookingDate)}</strong>, {linkedBooking.startTime}–{linkedBooking.endTime}. The equipment request still needs its own staff approval.
+            </div>
+          )}
+          {!editingRequest && !linkedBooking && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="note">
+              Availability is checked for your selected time, but equipment is not reserved until staff approve your request. If another request is approved first, staff will contact you about the conflict.
+            </div>
+          )}
           {lateWarning && (
             <div className="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
               <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
@@ -306,23 +403,24 @@ export default function RequestEquipment() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Date of Request</label>
-              <input type="date" className="input" value={form.requestDate}
+              <label className="label" htmlFor="equipment-request-date">Date of Request</label>
+              <input id="equipment-request-date" type="date" className="input" value={form.requestDate}
                 onChange={e => setField('requestDate', e.target.value)} />
             </div>
             <div>
-              <label className="label">Name of Borrower</label>
-              <input className="input bg-gray-50" value={userProfile?.name || ''} readOnly />
+              <label className="label" htmlFor="equipment-borrower">Name of Borrower</label>
+              <input id="equipment-borrower" className="input bg-gray-50" value={userProfile?.name || ''} readOnly />
             </div>
             <div>
-              <label className="label">Grade Level & Section</label>
-              <input className="input bg-gray-50"
+              <label className="label" htmlFor="equipment-grade-section">Grade Level & Section</label>
+              <input id="equipment-grade-section" className="input bg-gray-50"
                 value={`${userProfile?.gradeLevel || ''} · ${userProfile?.section || ''}`}
                 readOnly />
             </div>
             <div>
-              <label className="label">Teacher Assigned *</label>
+              <label className="label" htmlFor="equipment-teacher">Teacher Assigned *</label>
               <input
+                id="equipment-teacher"
                 className={`input ${formErrors.teacher ? 'input-error' : ''}`}
                 placeholder="Teacher's name"
                 value={form.teacher}
@@ -331,8 +429,9 @@ export default function RequestEquipment() {
               {formErrors.teacher && <p className="text-xs text-red-600 mt-1">{formErrors.teacher}</p>}
             </div>
             <div className="sm:col-span-2">
-              <label className="label">Experiment / Activity *</label>
+              <label className="label" htmlFor="equipment-experiment">Experiment / Activity *</label>
               <input
+                id="equipment-experiment"
                 className={`input ${formErrors.experiment ? 'input-error' : ''}`}
                 placeholder="e.g. Photosynthesis"
                 value={form.experiment}
@@ -341,8 +440,9 @@ export default function RequestEquipment() {
               {formErrors.experiment && <p className="text-xs text-red-600 mt-1">{formErrors.experiment}</p>}
             </div>
             <div>
-              <label className="label">Date of Experiment *</label>
+              <label className="label" htmlFor="equipment-experiment-date">Date of Experiment *</label>
               <input
+                id="equipment-experiment-date"
                 type="date"
                 className={`input ${formErrors.experimentDate ? 'input-error' : ''}`}
                 value={form.experimentDate}
@@ -351,8 +451,9 @@ export default function RequestEquipment() {
               {formErrors.experimentDate && <p className="text-xs text-red-600 mt-1">{formErrors.experimentDate}</p>}
             </div>
             <div>
-              <label className="label">Proposed Borrow Time *</label>
+              <label className="label" htmlFor="equipment-borrow-time">Proposed Borrow Time *</label>
               <input
+                id="equipment-borrow-time"
                 type="time"
                 className={`input ${formErrors.proposedBorrowTime ? 'input-error' : ''}`}
                 value={form.proposedBorrowTime}
@@ -361,15 +462,16 @@ export default function RequestEquipment() {
               {formErrors.proposedBorrowTime && <p className="text-xs text-red-600 mt-1">{formErrors.proposedBorrowTime}</p>}
             </div>
             <div>
-              <label className="label">Estimated Borrowing Duration</label>
-              <select className="input" value={form.duration} onChange={e => setField('duration', e.target.value)}>
+              <label className="label" htmlFor="equipment-duration">Estimated Borrowing Duration</label>
+              <select id="equipment-duration" className="input" value={form.duration} onChange={e => setField('duration', e.target.value)}>
                 {DURATION_OPTIONS.map(d => <option key={d}>{d}</option>)}
               </select>
             </div>
             {form.duration === 'Custom' && (
               <div>
-                <label className="label">Custom Duration (days)</label>
+                <label className="label" htmlFor="equipment-custom-days">Custom Duration (days)</label>
                 <input
+                  id="equipment-custom-days"
                   type="number" min="1" className="input"
                   value={form.customDays}
                   onChange={e => setField('customDays', e.target.value)}
@@ -378,8 +480,9 @@ export default function RequestEquipment() {
               </div>
             )}
             <div>
-              <label className="label">Expected Return Date</label>
+              <label className="label" htmlFor="equipment-return-date">Expected Return Date</label>
               <input
+                id="equipment-return-date"
                 type="date"
                 className={`input ${formErrors.expectedReturnDate ? 'input-error' : ''}`}
                 value={form.expectedReturnDate}
@@ -388,8 +491,9 @@ export default function RequestEquipment() {
               {formErrors.expectedReturnDate && <p className="text-xs text-red-600 mt-1">{formErrors.expectedReturnDate}</p>}
             </div>
             <div>
-              <label className="label">Expected Return Time *</label>
+              <label className="label" htmlFor="equipment-return-time">Expected Return Time *</label>
               <input
+                id="equipment-return-time"
                 type="time"
                 className={`input ${formErrors.expectedReturnTime ? 'input-error' : ''}`}
                 value={form.expectedReturnTime}
@@ -458,14 +562,14 @@ export default function RequestEquipment() {
 
           <button
             type="submit"
-            disabled={submitting || lines.some((l, i) => {
+    disabled={loading || prefillLoading || submitting || lines.some((l, i) => {
               const eq = getEquipmentAvail(l.equipmentId);
               return eq && reservationsReady && parseInt(l.qtyRequested) > getAvailableForWindow(l.equipmentId);
             }) || !reservationsReady || reservationError}
             className="btn-primary w-full justify-center"
           >
             <ClipboardList size={16} />
-            {submitting ? 'Submitting…' : 'Submit Request'}
+            {submitting ? (editingRequest ? 'Saving…' : 'Submitting…') : editingRequest ? 'Save Changes' : 'Submit Request'}
           </button>
         </form>
       </div>

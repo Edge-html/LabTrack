@@ -74,6 +74,7 @@ export default function Home() {
   const [recentLabBookings, setRecentLabBookings] = useState([]);
   const [todayLabBookings, setTodayLabBookings] = useState([]);
   const [reviewQueue, setReviewQueue] = useState(0);
+  const [pendingBookingCount, setPendingBookingCount] = useState(0);
   const [todaySchedule, setTodaySchedule] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -121,7 +122,7 @@ export default function Home() {
           );
           borrowedSnap.forEach(d => {
             const r = d.data();
-            if (isOverdue(r.status, r.expectedReturnDate)) overdueCount++;
+            if (isOverdue(r.status, r.expectedReturnDate, r.expectedReturnTime)) overdueCount++;
             else borrowedCount++;
           });
         }
@@ -170,6 +171,11 @@ export default function Home() {
         }
         setRecentLabBookings(labDocs);
 
+        if (isAdmin) {
+          const pendingLabSnap = await getDocs(query(collection(db, 'labBookings'), where('status', '==', 'pending'), limit(200)));
+          setPendingBookingCount(pendingLabSnap.size);
+        }
+
         let labToday = [];
         if (isAdmin) {
           const snap = await getDocs(
@@ -209,8 +215,12 @@ export default function Home() {
         setRecentRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       }, (err) => console.error("Admin onSnapshot error:", err));
       const unsub2 = onSnapshot(proofQ, (snap) => setReviewQueue(snap.size), () => {});
+      const pendingRequestQ = query(collection(db, 'requests'), where('status', '==', 'pending'), limit(200));
+      const unsub3 = onSnapshot(pendingRequestQ, snap => setStats(current => ({ ...current, pending: snap.size })), () => {});
+      const pendingBookingQ = query(collection(db, 'labBookings'), where('status', '==', 'pending'), limit(200));
+      const unsub4 = onSnapshot(pendingBookingQ, snap => setPendingBookingCount(snap.size), () => {});
       const prev = unsub;
-      unsub = () => { prev(); unsub2(); };
+      unsub = () => { prev(); unsub2(); unsub3(); unsub4(); };
     } else {
       const reqQ = query(collection(db, 'requests'), where('userId', '==', userProfile.uid));
       unsub = onSnapshot(reqQ, (snap) => {
@@ -265,26 +275,25 @@ export default function Home() {
         }
       </div>
 
-      {/* Action required: return proofs waiting on the laboratory */}
-      {isAdmin && reviewQueue > 0 && (
-        <Link
-          to="/admin/borrowing"
-          className="flex items-start gap-3 p-4 rounded-2xl bg-sky-50 border-2 border-sky-200 hover:border-sky-400 transition-colors"
-        >
-          <div className="p-2.5 rounded-xl bg-sky-100 text-sky-600 shrink-0">
-            <AlertTriangle size={20} strokeWidth={1.8} />
+      {/* Admin work queue: every item links directly to the screen that resolves it. */}
+      {isAdmin && (
+        <section className="card" aria-labelledby="admin-action-list-heading">
+          <div className="card-header" id="admin-action-list-heading"><AlertTriangle size={18} /> Action list</div>
+          <div className="divide-y divide-gray-100">
+            {[
+              { label: 'Equipment requests awaiting approval', count: stats.pending || 0, to: '/admin/requests' },
+              { label: 'Return photos waiting for review', count: reviewQueue, to: '/admin/borrowing' },
+              { label: 'Overdue equipment returns', count: stats.overdue || 0, to: '/admin/borrowing' },
+              { label: 'Laboratory bookings awaiting approval', count: pendingBookingCount, to: '/admin/lab-bookings' },
+            ].map(item => (
+              <Link key={item.label} to={item.to} className="flex items-center gap-3 p-3 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600">
+                <span className={`min-w-8 h-8 px-2 rounded-full flex items-center justify-center text-sm font-bold ${item.count ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800'}`}>{item.count}</span>
+                <span className="flex-1 text-sm font-medium text-gray-800">{item.label}</span>
+                <ChevronRight size={16} className="text-gray-400" aria-hidden="true" />
+              </Link>
+            ))}
           </div>
-          <div className="flex-1">
-            <p className="font-semibold text-sky-900">
-              {reviewQueue} return proof{reviewQueue === 1 ? '' : 's'} awaiting your assessment
-            </p>
-            <p className="text-sm text-sky-800">
-              Students have submitted photos of their returned equipment. Review each one to approve the
-              return or flag damage.
-            </p>
-          </div>
-          <ChevronRight size={18} className="text-sky-500 shrink-0 mt-1" />
-        </Link>
+        </section>
       )}
 
       {/* Warnings on the student's account */}

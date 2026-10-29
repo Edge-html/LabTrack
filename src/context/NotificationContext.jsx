@@ -40,6 +40,12 @@ export function NotificationProvider({ children }) {
     pendingRequests: [], returnProofs: [], overdueReturns: [], flaggedReturns: [], pendingBookings: [],
   });
   const [seenAt, setSeenAt] = useState(0);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   /* ── live sources ─────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -65,7 +71,7 @@ export function NotificationProvider({ children }) {
         onSnapshot(query(collection(db, 'requests'), where('status', '==', 'return_submitted'), limit(ADMIN_QUEUE_LIMIT)),
           snap => patch(setData, 'returnProofs', snap.docs.map(d => d.data())),
           empty),
-        onSnapshot(query(collection(db, 'requests'), where('status', '==', 'borrowed'), limit(ADMIN_QUEUE_LIMIT)),
+        onSnapshot(query(collection(db, 'requests'), where('status', 'in', ['borrowed', 'return_submitted', 'return_flagged']), limit(ADMIN_QUEUE_LIMIT)),
           snap => patch(setData, 'overdueReturns', snap.docs.map(d => d.data())),
           empty),
         onSnapshot(query(collection(db, 'requests'), where('status', '==', 'return_flagged'), limit(ADMIN_QUEUE_LIMIT)),
@@ -112,8 +118,8 @@ export function NotificationProvider({ children }) {
 
   /* ── derived ──────────────────────────────────────────────────────────── */
   const notifications = useMemo(
-    () => (isAdmin ? buildAdminNotifications(data) : buildStudentNotifications(data)),
-    [data, isAdmin],
+    () => (isAdmin ? buildAdminNotifications(data, clockNow) : buildStudentNotifications(data, clockNow)),
+    [data, isAdmin, clockNow],
   );
 
   const unreadCount = useMemo(

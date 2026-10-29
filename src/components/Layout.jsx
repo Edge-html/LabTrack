@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Package, ClipboardList, FileText, BookOpen, Info,
   Settings, Users, BarChart2, AlertTriangle, ChevronDown,
-  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays,
+  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays, Activity, FileBarChart2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -31,6 +31,8 @@ const adminNav = [
   { to: '/admin/lab-bookings', label: 'Lab Bookings', icon: DoorOpen, badgeKey: 'labBookings' },
   { to: '/admin/penalties', label: 'Penalties & Violations', icon: AlertTriangle },
   { to: '/admin/warnings', label: 'Account Warnings', icon: AlertOctagon },
+  { to: '/admin/reports', label: 'Reports & Exports', icon: FileBarChart2 },
+  { to: '/admin/activity', label: 'Admin Activity', icon: Activity },
   { to: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 

@@ -78,6 +78,19 @@ service cloud.firestore {
       allow read, update, delete: if isAdmin();
     }
 
+    // Append-only admin audit trail. No client, including admins, may edit or
+    // erase a logged action after it has been created.
+    match /adminActivity/{activityId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+             'actorUid', 'actorName', 'action', 'entityType', 'entityId',
+             'summary', 'metadata', 'at',
+           ]);
+      allow update, delete: if false;
+    }
+
     // ── equipment ───────────────────────────────────────────────────────────
     match /equipment/{docId} {
       allow read: if isSignedIn();
@@ -120,6 +133,7 @@ service cloud.firestore {
       // May only move borrowed -> return_submitted (or return_flagged -> return_submitted)
       // and may only touch the return-proof fields.
       allow update: if isSignedIn()
+        && isEligibleStudent()
         && resource.data.userId == request.auth.uid
         && resource.data.status in ['borrowed', 'return_flagged']
         && request.resource.data.status == 'return_submitted'
@@ -131,6 +145,22 @@ service cloud.firestore {
              'proposedReturnDate',
              'returnAttempt',
              'updatedAt',
+           ]);
+
+      // Student may edit the request details only while it is still pending.
+      // Identity, status, and original submission timestamps remain immutable.
+      allow update: if isSignedIn()
+        && isEligibleStudent()
+        && resource.data.userId == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.studentId == resource.data.studentId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'teacher', 'experiment', 'experimentDate', 'proposedBorrowTime',
+             'duration', 'expectedReturnDate', 'expectedReturnTime', 'items',
+             'lateRequestFlag', 'labBookingId', 'labRoom', 'studentEditedAt', 'updatedAt',
            ]);
 
       // Admin: full read, update, delete
@@ -190,11 +220,12 @@ service cloud.firestore {
       // Student: cancel their own pending booking only (no other field changes)
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
-        && resource.data.status == 'pending'
+        && resource.data.status in ['pending', 'approved']
         && request.resource.data.status == 'cancelled'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
              'status',
              'cancelledAt',
+             'cancellationReason',
              'updatedAt',
            ]);
 
@@ -228,7 +259,7 @@ service cloud.firestore {
       // atomically; admins may sync any status change.
       allow update: if isAdmin() || (
         isSignedIn()
-        && resource.data.status == 'pending'
+        && resource.data.status in ['pending', 'approved']
         && request.resource.data.status == 'cancelled'
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         && getAfter(/databases/$(database)/documents/labBookings/$(bookingId)).data.userId == request.auth.uid

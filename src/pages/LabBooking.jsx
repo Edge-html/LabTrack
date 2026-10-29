@@ -246,6 +246,10 @@ export default function LabBooking() {
           </p>
         </div>
 
+        <div className="mx-5 mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+          Please arrive on time. If plans change or you are delayed, contact laboratory staff and cancel the booking if you cannot attend. Staff record the actual occupied and done times; an approved slot without a check-in after its end may be marked as a no-show.
+        </div>
+
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           {/* Room picker */}
           <div>

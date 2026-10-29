@@ -11,12 +11,15 @@ import {
   collection, query, onSnapshot, orderBy, limit,
   runTransaction, doc, getDoc, serverTimestamp, updateDoc, writeBatch,
   where, getDocs, increment,
+  startAfter,
 } from 'firebase/firestore';
 import { formatDate, formatTimestamp, timeAgo, getTodayManila } from '../../lib/helpers';
 import { StatusBadge } from '../../components/StatusBadge';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
+import DeleteWithBackupDialog from '../../components/DeleteWithBackupDialog';
 import { TableSkeleton } from '../../components/LoadingSpinner';
 import { ensureActiveEquipmentReservations, hasReservationOverlap, reservationDocumentId, reservationWindow } from '../../lib/equipmentReservations';
+import { addAdminActivity } from '../../lib/adminActivity';
+import { downloadRequestHistoryBackup } from '../../lib/historyBackup';
 
 const TABS = ['Pending', 'All Requests'];
 const STATUS_OPTIONS = ['', 'pending', 'approved', 'rejected', 'borrowed', 'return_submitted', 'return_flagged', 'returned'];
@@ -133,9 +136,16 @@ export default function ManageRequests() {
   const [approveTarget, setApproveTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [olderRequests, setOlderRequests] = useState([]);
+  const [historyCursor, setHistoryCursor] = useState(null);
+  const [hasMoreHistory, setHasMoreHistory] = useState(false);
+  const [loadingMoreHistory, setLoadingMoreHistory] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setOlderRequests([]);
+    setHistoryCursor(null);
+    setHasMoreHistory(false);
     let q;
     if (tab === 0) {
       q = query(collection(db, 'requests'), where('status', '==', 'pending'), orderBy('requestDate', 'asc'));
@@ -144,6 +154,10 @@ export default function ManageRequests() {
     }
     const unsub = onSnapshot(q, snap => {
       setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      if (tab === 1) {
+        setHistoryCursor(snap.docs.at(-1) || null);
+        setHasMoreHistory(snap.size === 100);
+      }
       setLoading(false);
     }, (err) => {
       console.error(err);
@@ -153,7 +167,24 @@ export default function ManageRequests() {
     return unsub;
   }, [tab]);
 
-  const filtered = requests.filter(r => {
+  async function loadMoreHistory() {
+    if (tab !== 1 || !historyCursor || !hasMoreHistory || loadingMoreHistory) return;
+    setLoadingMoreHistory(true);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'requests'), orderBy('requestDate', 'desc'), startAfter(historyCursor), limit(100),
+      ));
+      setOlderRequests(current => [...current, ...snap.docs.map(d => ({ id: d.id, ...d.data() }))]);
+      setHistoryCursor(snap.docs.at(-1) || historyCursor);
+      setHasMoreHistory(snap.size === 100);
+    } catch (error) {
+      toast.error(`Could not load more request history: ${error.message}`);
+    } finally {
+      setLoadingMoreHistory(false);
+    }
+  }
+
+  const filtered = [...requests, ...olderRequests].filter(r => {
     const q = search.toLowerCase();
     const matchSearch = !q ||
       r.borrowerName?.toLowerCase().includes(q) ||
@@ -231,6 +262,11 @@ export default function ManageRequests() {
           })),
           updatedAt: serverTimestamp(),
         });
+        addAdminActivity(tx, db, userProfile, {
+          action: 'approved', entityType: 'equipment request', entityId: request.id,
+          summary: `Approved ${request.borrowerName || 'student'}’s equipment request for ${request.experiment || 'an experiment'}.`,
+          metadata: { userId: request.userId, itemCount: adjustedItems.length },
+        });
       });
       toast.success('Request approved.');
       setApproveTarget(null);
@@ -272,13 +308,25 @@ export default function ManageRequests() {
             staffRemarks: reason,
             updatedAt: serverTimestamp(),
           });
+          addAdminActivity(tx, db, userProfile, {
+            action: 'rejected', entityType: 'equipment request', entityId: request.id,
+            summary: `Rejected ${request.borrowerName || 'student'}’s equipment request: ${reason}`,
+            metadata: { userId: request.userId },
+          });
         });
       } else {
-        await updateDoc(doc(db, 'requests', request.id), {
+        const batch = writeBatch(db);
+        batch.update(doc(db, 'requests', request.id), {
           status: 'rejected',
           staffRemarks: reason,
           updatedAt: serverTimestamp(),
         });
+        addAdminActivity(batch, db, userProfile, {
+          action: 'rejected', entityType: 'equipment request', entityId: request.id,
+          summary: `Rejected ${request.borrowerName || 'student'}’s equipment request: ${reason}`,
+          metadata: { userId: request.userId },
+        });
+        await batch.commit();
       }
       toast.success('Request rejected.');
       setRejectTarget(null);
@@ -294,8 +342,14 @@ export default function ManageRequests() {
       const batch = writeBatch(db);
       batch.delete(doc(db, 'requests', deleteTarget.id));
       batch.delete(doc(db, 'requestProofs', deleteTarget.id));
+      addAdminActivity(batch, db, userProfile, {
+        action: 'deleted', entityType: 'equipment request', entityId: deleteTarget.id,
+        summary: `Deleted equipment request history for ${deleteTarget.borrowerName || 'student'} (${deleteTarget.experiment || 'experiment'}).`,
+        metadata: { userId: deleteTarget.userId },
+      });
       await batch.commit();
       setRequests(current => current.filter(request => request.id !== deleteTarget.id));
+      setOlderRequests(current => current.filter(request => request.id !== deleteTarget.id));
       toast.success('Equipment request history deleted.');
       setDeleteTarget(null);
     } catch (err) {
@@ -458,6 +512,13 @@ export default function ManageRequests() {
             </table>
           </div>
         )}
+        {tab === 1 && hasMoreHistory && !loading && (
+          <div className="p-4 border-t border-gray-100 text-center">
+            <button type="button" className="btn-secondary btn-sm" onClick={loadMoreHistory} disabled={loadingMoreHistory}>
+              {loadingMoreHistory ? 'Loading…' : 'Load more request history'}
+            </button>
+          </div>
+        )}
       </div>
 
       {rejectTarget && (
@@ -474,17 +535,16 @@ export default function ManageRequests() {
           onConfirm={(items, remarks) => handleApprove(approveTarget, items, remarks)}
         />
       )}
-      <ConfirmDialog
+      <DeleteWithBackupDialog
         isOpen={!!deleteTarget}
         title="Delete equipment request history?"
         message={deleteTarget
           ? `Permanently delete ${deleteTarget.borrowerName || 'this student'}’s ${deleteTarget.experiment || 'equipment'} request? This cannot be undone.`
           : ''}
-        confirmLabel={deleting ? 'Deleting…' : 'Delete history'}
         onCancel={() => { if (!deleting) setDeleteTarget(null); }}
+        onDownload={() => downloadRequestHistoryBackup(db, [deleteTarget], `labtrack_request_${deleteTarget.id}_backup.json`)}
         onConfirm={handleDeleteRequest}
-        busy={deleting}
-        danger
+        deleting={deleting}
       />
     </div>
   );

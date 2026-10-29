@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  FileText, Search, Trash2, Camera, AlertTriangle, Clock,
+  FileText, Search, Trash2, Camera, AlertTriangle, Clock, Pencil,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import {
-  collection, query, where, getDocs, deleteDoc, doc, orderBy, limit,
+  collection, query, where, getDocs, deleteDoc, doc, orderBy, limit, startAfter,
 } from 'firebase/firestore';
-import { formatDate, formatTimestamp, timeAgo } from '../lib/helpers';
+import { formatDate, formatTimestamp, timeAgo, formatTimeOfDay, getEquipmentDueState } from '../lib/helpers';
 import { StatusBadge } from '../components/StatusBadge';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { TableSkeleton } from '../components/LoadingSpinner';
@@ -27,6 +27,15 @@ export default function MyRequests() {
   const [statusFilter, setStatusFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [returnTarget, setReturnTarget] = useState(null);
+  const [historyCursor, setHistoryCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     load();
@@ -44,11 +53,31 @@ export default function MyRequests() {
       );
       const snap = await getDocs(q);
       setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setHistoryCursor(snap.docs.at(-1) || null);
+      setHasMore(snap.size === 100);
     } catch (err) {
       console.error(err);
       toast.error('Failed to load requests.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMore() {
+    if (!userProfile || !historyCursor || !hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'requests'), where('userId', '==', userProfile.uid),
+        orderBy('requestDate', 'desc'), startAfter(historyCursor), limit(100),
+      ));
+      setRequests(current => [...current, ...snap.docs.map(d => ({ id: d.id, ...d.data() }))]);
+      setHistoryCursor(snap.docs.at(-1) || historyCursor);
+      setHasMore(snap.size === 100);
+    } catch (error) {
+      toast.error(`Could not load more requests: ${error.message}`);
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -64,6 +93,9 @@ export default function MyRequests() {
   const flaggedCount = requests.filter(r => r.status === 'return_flagged').length;
   // "Awaiting your photo" = equipment is out but the student hasn't submitted proof yet.
   const toReturnCount = requests.filter(r => r.status === 'borrowed').length;
+  const dueSoonOrLate = requests
+    .map(request => ({ request, due: getEquipmentDueState(request.status, request.expectedReturnDate, request.expectedReturnTime, clockNow) }))
+    .filter(row => row.due);
 
   async function handleCancel() {
     if (!deleteTarget) return;
@@ -112,6 +144,29 @@ export default function MyRequests() {
       )}
 
       <WarningsPanel userId={userProfile?.uid} header="Warnings on My Account" />
+
+      {dueSoonOrLate.length > 0 && (
+        <section className="card border-amber-300 bg-amber-50/60" aria-labelledby="equipment-deadline-heading">
+          <div className="card-header bg-amber-100 text-amber-950" id="equipment-deadline-heading">
+            <Clock size={17} /> Equipment return reminders
+          </div>
+          <div className="p-3 space-y-2">
+            {dueSoonOrLate.map(({ request, due }) => (
+              <div key={request.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-white p-3 border border-amber-100">
+                <div className="min-w-0 flex-1">
+                  <p className={`font-semibold text-sm ${due.kind === 'overdue' ? 'text-red-700' : 'text-amber-900'}`}>
+                    {due.kind === 'overdue' ? 'Overdue' : 'Due within 24 hours'} · {request.experiment}
+                  </p>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    Return by {formatDate(request.expectedReturnDate)} at {formatTimeOfDay(request.expectedReturnTime || '12:00')}.
+                  </p>
+                </div>
+                <Link to={`/requests/${request.id}`} className="btn-secondary btn-sm">View request</Link>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="card">
         <div className="card-header">
@@ -179,6 +234,7 @@ export default function MyRequests() {
                     <td data-label="Request Sent">
                       <p className="text-sm">{formatTimestamp(r.createdAt)}</p>
                       <p className="text-xs text-gray-400">{timeAgo(r.createdAt)}</p>
+                      {r.studentEditedAt && <p className="text-xs text-sky-700 mt-1">Updated {timeAgo(r.studentEditedAt)}</p>}
                     </td>
                     <td data-label="Returned">
                       {r.returnedAt || r.returnSubmittedAt ? (
@@ -214,13 +270,19 @@ export default function MyRequests() {
                           </span>
                         )}
                         {r.status === 'pending' && (
-                          <button
-                            onClick={() => setDeleteTarget(r)}
-                            className="btn-ghost btn-sm p-1.5 text-red-400 hover:bg-red-50"
-                            title="Cancel request"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <>
+                            <Link to={`/request?edit=${r.id}`} className="btn-secondary btn-sm" aria-label={`Edit pending request for ${r.experiment}`}>
+                              <Pencil size={13} /> Edit
+                            </Link>
+                            <button
+                              onClick={() => setDeleteTarget(r)}
+                              className="btn-ghost btn-sm p-1.5 text-red-400 hover:bg-red-50"
+                              title="Cancel request"
+                              aria-label={`Cancel request for ${r.experiment}`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -228,6 +290,13 @@ export default function MyRequests() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {hasMore && !loading && filtered.length > 0 && (
+          <div className="p-4 border-t border-gray-100 text-center">
+            <button type="button" onClick={loadMore} disabled={loadingMore} className="btn-secondary btn-sm">
+              {loadingMore ? 'Loading…' : 'Load more requests'}
+            </button>
           </div>
         )}
       </div>
