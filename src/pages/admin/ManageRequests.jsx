@@ -196,33 +196,75 @@ export default function ManageRequests() {
 
   async function handleApprove(request, adjustedItems, remarks) {
     try {
+      if (!request?.id) throw new Error('This request could not be identified. Refresh the page and try again.');
+      const itemsToApprove = adjustedItems.map(item => ({
+        ...item,
+        equipmentId: String(item.equipmentId || '').trim(),
+        qtyApproved: Number(item.qtyApproved || item.qtyRequested || 0),
+      }));
+      const missingEquipment = itemsToApprove.find(item => !item.equipmentId);
+      if (missingEquipment) {
+        throw new Error(`“${missingEquipment.name || 'An item'}” is not linked to a laboratory inventory record. Ask an administrator to update this request before approving it.`);
+      }
+      if (!itemsToApprove.length) throw new Error('This request has no items to approve.');
+      if (itemsToApprove.some(item =>
+        !Number.isInteger(item.qtyApproved)
+        || item.qtyApproved < 1
+        || item.qtyApproved > Number(item.qtyRequested || 0)
+      )) {
+        throw new Error('Each approved quantity must be a whole number from 1 up to the requested quantity.');
+      }
+
       await ensureActiveEquipmentReservations(db);
       const allocationMap = new Map();
-      adjustedItems.forEach(item => {
+      itemsToApprove.forEach(item => {
         const current = allocationMap.get(item.equipmentId) || { equipmentId: item.equipmentId, name: item.name, qty: 0 };
-        current.qty += Number(item.qtyApproved || item.qtyRequested || 0);
+        current.qty += item.qtyApproved;
         allocationMap.set(item.equipmentId, current);
       });
       const allocations = [...allocationMap.values()];
       const window = reservationWindow(request);
       if (!window) throw new Error('The request is missing its proposed borrow or return schedule.');
+
+      // The Web Firestore SDK does not support query reads inside transactions.
+      // Read active reservation queries first, then use each inventory document's
+      // revision as a transaction guard against a concurrent approval changing
+      // availability between these reads and the write.
+      const eqRefs = allocations.map(item => doc(db, 'equipment', item.equipmentId));
+      const observedEquipment = [];
+      for (const ref of eqRefs) observedEquipment.push(await getDoc(ref));
+      observedEquipment.forEach((snapshot, index) => {
+        if (!snapshot.exists()) throw new Error(`Equipment “${allocations[index].name}” was not found in the laboratory inventory.`);
+      });
+      const observedRevisions = observedEquipment.map(snapshot => Number(snapshot.data().reservationRevision) || 0);
+      const reservationQueries = allocations.map(item => query(
+        collection(db, 'equipmentReservations'),
+        where('equipmentId', '==', item.equipmentId),
+        where('status', '==', 'active'),
+      ));
+      const reservationSnaps = [];
+      for (const reservationQuery of reservationQueries) reservationSnaps.push(await getDocs(reservationQuery));
+      const reqRef = doc(db, 'requests', request.id);
+
       await runTransaction(db, async (tx) => {
-        const eqRefs = allocations.map(item => doc(db, 'equipment', item.equipmentId));
+        const requestSnap = await tx.get(reqRef);
+        if (!requestSnap.exists()) throw new Error('This request no longer exists. Refresh the page.');
+        if (requestSnap.data().status !== 'pending') {
+          throw new Error('This request is no longer pending. Refresh the page to see its latest status.');
+        }
+
         const eqSnaps = [];
         for (const ref of eqRefs) {
           eqSnaps.push(await tx.get(ref));
         }
-        const reservationQueries = allocations.map(item => query(
-          collection(db, 'equipmentReservations'),
-          where('equipmentId', '==', item.equipmentId),
-          where('status', '==', 'active'),
-        ));
-        const reservationSnaps = [];
-        for (const reservationQuery of reservationQueries) reservationSnaps.push(await tx.get(reservationQuery));
 
         allocations.forEach((item, i) => {
           if (!eqSnaps[i].exists()) throw new Error(`Equipment "${item.name}" not found.`);
           const inventory = eqSnaps[i].data();
+          const currentRevision = Number(inventory.reservationRevision) || 0;
+          if (currentRevision !== observedRevisions[i]) {
+            throw new Error('Equipment availability changed while this request was being approved. Refresh the page and try again.');
+          }
           const activeReservations = reservationSnaps[i].docs.map(snapshot => snapshot.data());
           const reservedTotal = activeReservations.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
           const reservedOverlap = activeReservations
@@ -249,14 +291,13 @@ export default function ManageRequests() {
           tx.update(eqRefs[i], { reservationRevision: increment(1), updatedAt: serverTimestamp() });
         });
 
-        const reqRef = doc(db, 'requests', request.id);
         tx.update(reqRef, {
           status: 'approved',
           staffRemarks: remarks,
           approvedAt: serverTimestamp(),
           approvedBy: userProfile?.name || 'Laboratory Staff',
           inventoryDeductedAtApproval: false,
-          items: adjustedItems.map(item => ({
+          items: itemsToApprove.map(item => ({
             ...item,
             qtyRequested: item.qtyApproved || item.qtyRequested,
           })),
@@ -265,7 +306,7 @@ export default function ManageRequests() {
         addAdminActivity(tx, db, userProfile, {
           action: 'approved', entityType: 'equipment request', entityId: request.id,
           summary: `Approved ${request.borrowerName || 'student'}’s equipment request for ${request.experiment || 'an experiment'}.`,
-          metadata: { userId: request.userId, itemCount: adjustedItems.length },
+          metadata: { userId: request.userId, itemCount: itemsToApprove.length },
         });
       });
       toast.success('Request approved.');
