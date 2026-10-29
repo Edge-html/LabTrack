@@ -28,6 +28,7 @@ const ManageLabBookings = lazy(() => import('./pages/admin/ManageLabBookings'));
 const Warnings = lazy(() => import('./pages/admin/Warnings'));
 const AdminActivity = lazy(() => import('./pages/admin/AdminActivity'));
 const Reports = lazy(() => import('./pages/admin/Reports'));
+const Profile = lazy(() => import('./pages/Profile'));
 
 // Guards
 import { RequireAuth, RequireAdmin } from './components/RouteGuards';
@@ -97,6 +98,7 @@ export default function App() {
               <Route path="/lab-schedule" element={<LabSchedule />} />
               <Route path="/rules" element={<RulesPenalties />} />
               <Route path="/about" element={<About />} />
+              <Route path="/profile" element={<Profile />} />
 
               {/* Admin-only routes */}
               <Route element={<RequireAdmin />}>

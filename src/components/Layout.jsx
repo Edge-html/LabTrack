@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home, Package, ClipboardList, FileText, BookOpen, Info,
   Settings, Users, BarChart2, AlertTriangle, ChevronDown,
-  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays, Activity, FileBarChart2,
+  LogOut, Menu, X, DoorOpen, CalendarRange, AlertOctagon, CalendarDays, Activity, FileBarChart2, User,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -254,6 +254,14 @@ export function Header({ onMenuClick }) {
                 <div className="font-semibold text-sm text-crimson-dark">{userProfile?.name}</div>
                 <div className="text-xs text-gray-500 capitalize">{userProfile?.role}</div>
               </div>
+              <Link
+                to="/profile"
+                onClick={() => setMenuOpen(false)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-gold-pale transition-colors font-medium"
+              >
+                <User size={14} />
+                Profile
+              </Link>
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-crimson hover:bg-gold-pale transition-colors font-medium"

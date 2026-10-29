@@ -5,6 +5,8 @@ Run this checklist on a Vercel Preview deployment before promoting a workflow or
 ## Student flows
 
 - [ ] Register a student, verify the email, sign out, and sign in again.
+- [ ] For a student profile missing details, open **Profile**, add a valid LRN, grade, and section, and confirm the LRN is claimed once. Try an LRN already used by another account and confirm it is rejected.
+- [ ] Complete the student profile, then submit an item request and a room booking. Confirm the student's name, LRN, grade, and section are attached to each record.
 - [ ] Open Laboratory Inventory, then request equipment for a specific date and time. Confirm the page says the equipment is tentative until approved.
 - [ ] Submit a pending equipment request, edit its date, time, quantity, and item, then confirm the original submitted time remains visible and the edit timestamp updates.
 - [ ] Try a time window that overlaps an approved equipment reservation. Confirm the available quantity and submit protection respond correctly.
@@ -29,7 +31,7 @@ Run this checklist on a Vercel Preview deployment before promoting a workflow or
 ## Deploy
 
 - [ ] Review the Vercel Preview deployment and confirm no build errors.
-- [ ] Deploy Firestore rules for student edits to pending equipment requests, approved-room cancellation, and the admin-only append-only activity log:
+- [ ] Deploy Firestore rules for student profile completion and unique LRNs, pending request edits, approved-room cancellation, and the admin-only append-only activity log:
 
   ```powershell
   firebase.cmd deploy --only firestore:rules --project amazing-project-ef9e3

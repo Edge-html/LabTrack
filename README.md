@@ -94,7 +94,7 @@ firebase deploy --only firestore
 
 ### 5. Authentication email branding and student LRNs
 
-- New student accounts require a unique 12-digit LRN and an email verification link.
+- New student accounts require a unique numeric LRN and an email verification link. A student can add a missing LRN, grade, and section later from **Profile**; once claimed, the LRN can only be corrected by an administrator.
 - Signing into an unverified student account automatically requests a verification email. Automatic sends are throttled per browser for 10 minutes; the Verify Email page still offers a manual resend.
 - Accounts with an administrator role in `users/{uid}` can sign in without email verification; new public registrations remain student accounts and must verify.
 - The app includes a custom handler at `/auth/action` for verification, password reset, and email recovery. Firebase currently rejects this project's template action URL update, so new student verification emails use a Vercel Function to generate a Firebase Admin SDK action code, build the LabTrack handler link, and send a branded email through Brevo or another SMTP provider. This avoids Firebase's blocked template setting and does not use Cloud Functions.

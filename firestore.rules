@@ -55,14 +55,37 @@ service cloud.firestore {
         && !('borrowRestrictedUntil' in request.resource.data)
         && !('restrictionReason' in request.resource.data);
 
-      // Update own doc: cannot change role, borrowRestrictedUntil, or restrictionReason; gradeLevel must be 11 or 12 if changed.
-      // `notifSeenAt` is the notification read watermark and is safe for a student to move themselves.
+      // Students may update only their own basic profile and notification
+      // watermark. A missing LRN can be claimed only with its registry entry in
+      // the same batch, which keeps duplicate LRNs from being assigned.
       allow update: if isSignedIn()
         && request.auth.uid == uid
-        && (!('gradeLevel' in request.resource.data.diff(resource.data).affectedKeys()) || request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12'])
-        && !('role' in request.resource.data.diff(resource.data).affectedKeys())
-        && !('borrowRestrictedUntil' in request.resource.data.diff(resource.data).affectedKeys())
-        && !('restrictionReason' in request.resource.data.diff(resource.data).affectedKeys());
+        && resource.data.role == 'student'
+        && request.resource.data.role == 'student'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+             'name', 'lrn', 'gradeLevel', 'section', 'notifSeenAt', 'updatedAt',
+           ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.gradeLevel in ['Grade 11', 'Grade 12', '11', '12']
+        && request.resource.data.section is string
+        && request.resource.data.section.size() > 0
+        && request.resource.data.lrn is string
+        && request.resource.data.lrn.matches('^[0-9]+$')
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['lrn'])
+          || (
+            (!('lrn' in resource.data) || resource.data.lrn == null || resource.data.lrn == '')
+            && getAfter(/databases/$(database)/documents/lrnRegistry/$(request.resource.data.lrn)).data.uid == request.auth.uid
+          )
+        );
+
+      // Keep notification read markers working for legacy profiles that still
+      // need to complete their required student details.
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['notifSeenAt'])
+        && request.resource.data.notifSeenAt is number;
 
       // Admin can update any user (including role and restriction fields)
       allow update: if isAdmin();
@@ -74,7 +97,8 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.lrn == lrn
-        && lrn.matches('^[0-9]+$');
+        && lrn.matches('^[0-9]+$')
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.lrn == lrn;
       allow read, update, delete: if isAdmin();
     }
 
