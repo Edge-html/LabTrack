@@ -9,7 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   collection, query, onSnapshot, orderBy, limit,
-  runTransaction, doc, getDoc, serverTimestamp, updateDoc, writeBatch,
+  runTransaction, doc, getDocFromServer, getDocsFromServer, serverTimestamp, updateDoc, writeBatch,
   where, getDocs, increment,
   startAfter,
 } from 'firebase/firestore';
@@ -265,84 +265,100 @@ export default function ManageRequests() {
       // revision as a transaction guard against a concurrent approval changing
       // availability between these reads and the write.
       const eqRefs = allocations.map(item => doc(db, 'equipment', item.equipmentId));
-      const observedEquipment = [];
-      for (const ref of eqRefs) observedEquipment.push(await getDoc(ref));
-      observedEquipment.forEach((snapshot, index) => {
-        if (!snapshot.exists()) throw new Error(`Equipment “${allocations[index].name}” was not found in the laboratory inventory.`);
-      });
-      const observedRevisions = observedEquipment.map(snapshot => Number(snapshot.data().reservationRevision) || 0);
       const reservationQueries = allocations.map(item => query(
         collection(db, 'equipmentReservations'),
         where('equipmentId', '==', item.equipmentId),
         where('status', '==', 'active'),
       ));
-      const reservationSnaps = [];
-      for (const reservationQuery of reservationQueries) reservationSnaps.push(await getDocs(reservationQuery));
       const reqRef = doc(db, 'requests', request.id);
 
-      await runTransaction(db, async (tx) => {
-        const requestSnap = await tx.get(reqRef);
-        if (!requestSnap.exists()) throw new Error('This request no longer exists. Refresh the page.');
-        if (requestSnap.data().status !== 'pending') {
-          throw new Error('This request is no longer pending. Refresh the page to see its latest status.');
-        }
-
-        const eqSnaps = [];
-        for (const ref of eqRefs) {
-          eqSnaps.push(await tx.get(ref));
-        }
-
-        allocations.forEach((item, i) => {
-          if (!eqSnaps[i].exists()) throw new Error(`Equipment "${item.name}" not found.`);
-          const inventory = eqSnaps[i].data();
-          const currentRevision = Number(inventory.reservationRevision) || 0;
-          if (currentRevision !== observedRevisions[i]) {
-            throw new Error('Equipment availability changed while this request was being approved. Refresh the page and try again.');
-          }
-          const activeReservations = reservationSnaps[i].docs.map(snapshot => snapshot.data());
-          const reservedTotal = activeReservations.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
-          const reservedOverlap = activeReservations
-            .filter(entry => entry.requestId !== request.id && hasReservationOverlap(window, entry))
-            .reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
-          const legacyHeld = Math.max(0, (Number(inventory.totalQty) || 0) - (Number(inventory.availableQty) || 0) - reservedTotal);
-          const availableForWindow = Math.max(0, (Number(inventory.totalQty) || 0) - reservedOverlap - legacyHeld);
-          if (item.qty > availableForWindow) {
-            throw new Error(`"${item.name}" has only ${availableForWindow} available for these dates and times. Another reservation overlaps this request.`);
-          }
-        });
-
-        allocations.forEach((item, i) => {
-          const reservationId = reservationDocumentId(request.id, item.equipmentId);
-          tx.set(doc(db, 'equipmentReservations', reservationId), {
-            equipmentId: item.equipmentId,
-            requestId: request.id,
-            qty: item.qty,
-            ...window,
-            status: 'active',
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
+      // If another admin approves a request for this equipment between the
+      // availability query and commit, reload reservations and retry. A change
+      // on a non-overlapping time window should not require a manual retry.
+      let approved = false;
+      for (let attempt = 0; attempt < 3 && !approved; attempt += 1) {
+        try {
+          const observedEquipment = await Promise.all(eqRefs.map(ref => getDocFromServer(ref)));
+          observedEquipment.forEach((snapshot, index) => {
+            if (!snapshot.exists()) throw new Error(`Equipment “${allocations[index].name}” was not found in the laboratory inventory.`);
           });
-          tx.update(eqRefs[i], { reservationRevision: increment(1), updatedAt: serverTimestamp() });
-        });
+          const observedRevisions = observedEquipment.map(snapshot => Number(snapshot.data().reservationRevision) || 0);
+          const reservationSnaps = await Promise.all(reservationQueries.map(reservationQuery => getDocsFromServer(reservationQuery)));
 
-        tx.update(reqRef, {
-          status: 'approved',
-          staffRemarks: remarks,
-          approvedAt: serverTimestamp(),
-          approvedBy: userProfile?.name || 'Laboratory Staff',
-          inventoryDeductedAtApproval: false,
-          items: itemsToApprove.map(item => ({
-            ...item,
-            qtyRequested: item.qtyApproved || item.qtyRequested,
-          })),
-          updatedAt: serverTimestamp(),
-        });
-        addAdminActivity(tx, db, userProfile, {
-          action: 'approved', entityType: 'equipment request', entityId: request.id,
-          summary: `Approved ${request.borrowerName || 'student'}’s equipment request for ${request.experiment || 'an experiment'}.`,
-          metadata: { userId: request.userId, itemCount: itemsToApprove.length },
-        });
-      });
+          await runTransaction(db, async (tx) => {
+            const requestSnap = await tx.get(reqRef);
+            if (!requestSnap.exists()) throw new Error('This request no longer exists. Refresh the page.');
+            if (requestSnap.data().status !== 'pending') {
+              throw new Error('This request is no longer pending. Refresh the page to see its latest status.');
+            }
+
+            const eqSnaps = [];
+            for (const ref of eqRefs) {
+              eqSnaps.push(await tx.get(ref));
+            }
+
+            allocations.forEach((item, i) => {
+              if (!eqSnaps[i].exists()) throw new Error(`Equipment "${item.name}" not found.`);
+              const inventory = eqSnaps[i].data();
+              const currentRevision = Number(inventory.reservationRevision) || 0;
+              if (currentRevision !== observedRevisions[i]) {
+                const error = new Error('Equipment availability changed during approval. Refreshing availability…');
+                error.code = 'equipment-availability-changed';
+                throw error;
+              }
+              const activeReservations = reservationSnaps[i].docs.map(snapshot => snapshot.data());
+              const reservedTotal = activeReservations.reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+              const reservedOverlap = activeReservations
+                .filter(entry => entry.requestId !== request.id && hasReservationOverlap(window, entry))
+                .reduce((sum, entry) => sum + (Number(entry.qty) || 0), 0);
+              const legacyHeld = Math.max(0, (Number(inventory.totalQty) || 0) - (Number(inventory.availableQty) || 0) - reservedTotal);
+              const availableForWindow = Math.max(0, (Number(inventory.totalQty) || 0) - reservedOverlap - legacyHeld);
+              if (item.qty > availableForWindow) {
+                throw new Error(`"${item.name}" has only ${availableForWindow} available for these dates and times. Another reservation overlaps this request.`);
+              }
+            });
+
+            allocations.forEach((item, i) => {
+              const reservationId = reservationDocumentId(request.id, item.equipmentId);
+              tx.set(doc(db, 'equipmentReservations', reservationId), {
+                equipmentId: item.equipmentId,
+                requestId: request.id,
+                qty: item.qty,
+                ...window,
+                status: 'active',
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+              tx.update(eqRefs[i], { reservationRevision: increment(1), updatedAt: serverTimestamp() });
+            });
+
+            tx.update(reqRef, {
+              status: 'approved',
+              staffRemarks: remarks,
+              approvedAt: serverTimestamp(),
+              approvedBy: userProfile?.name || 'Laboratory Staff',
+              inventoryDeductedAtApproval: false,
+              items: itemsToApprove.map(item => ({
+                ...item,
+                qtyRequested: item.qtyApproved || item.qtyRequested,
+              })),
+              updatedAt: serverTimestamp(),
+            });
+            addAdminActivity(tx, db, userProfile, {
+              action: 'approved', entityType: 'equipment request', entityId: request.id,
+              summary: `Approved ${request.borrowerName || 'student'}’s equipment request for ${request.experiment || 'an experiment'}.`,
+              metadata: { userId: request.userId, itemCount: itemsToApprove.length },
+            });
+          });
+          approved = true;
+        } catch (error) {
+          if (error?.code !== 'equipment-availability-changed') throw error;
+          if (attempt === 2) {
+            throw new Error('Equipment availability is changing because of another approval. Please wait a moment and try again.');
+          }
+        }
+      }
+
       toast.success('Request approved.');
       setApproveTarget(null);
     } catch (err) {
