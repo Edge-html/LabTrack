@@ -362,7 +362,9 @@ export default function Home() {
             </div>
             <div className="grid grid-cols-2 gap-2 p-3">
               <QuickAccessCard to="/inventory" icon={Package} title="View Inventory" desc="Check available equipment and quantities" />
-              <QuickAccessCard to={isAdmin ? '/admin/requests' : '/request'} icon={ClipboardList} title="Equipment Request" desc="Request laboratory equipment" />
+              <QuickAccessCard to={isAdmin ? '/admin/requests' : '/request'} icon={ClipboardList}
+                title={isAdmin ? 'Manage Requests' : 'Request Item'}
+                desc={isAdmin ? 'Review student requests' : 'Request laboratory items'} />
               <QuickAccessCard to={isAdmin ? '/admin/lab-bookings' : '/lab-booking'} icon={DoorOpen} title="Book Laboratory" desc="Reserve Room 103 or Room 301" />
               <QuickAccessCard to={isAdmin ? '/admin/warnings' : '/my-requests'} icon={isAdmin ? AlertTriangle : FileText} title={isAdmin ? 'Issue Warning' : 'My Requests'} desc={isAdmin ? 'Record a warning on an account' : 'Track your requests and returns'} />
               <QuickAccessCard to={isAdmin ? '/admin/borrowing' : '/my-lab-bookings'} icon={Calendar} title={isAdmin ? 'Borrowing & Returns' : 'My Lab Bookings'} desc={isAdmin ? 'Approve and check returns' : 'Track your room reservations'} />

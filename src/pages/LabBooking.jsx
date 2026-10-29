@@ -242,7 +242,7 @@ export default function LabBooking() {
           <Info size={16} className="text-crimson shrink-0 mt-0.5" />
           <p className="text-sm text-gray-700">
             This form is for reserving a laboratory room. To borrow glassware and other
-            equipment, use the <span className="font-semibold">Request Equipment</span> form instead.
+            equipment, use the <span className="font-semibold">Request Item</span> form instead.
           </p>
         </div>
 

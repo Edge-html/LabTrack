@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getIdToken, reload } from 'firebase/auth';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ClipboardList, Plus, Trash2, AlertTriangle, AlertCircle,
@@ -21,7 +22,7 @@ import {
 const EMPTY_LINE = { equipmentId: '', name: '', qtyRequested: 1 };
 
 export default function RequestEquipment() {
-  const { userProfile } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -260,11 +261,6 @@ export default function RequestEquipment() {
       return;
     }
 
-    if (!isValidGradeLevel(userProfile?.gradeLevel)) {
-      toast.error('Only Grade 11 and Grade 12 students are permitted to submit laboratory requests.');
-      return;
-    }
-
     const { formErrs, lineErrs } = validate();
     setFormErrors(formErrs);
     setLineErrors(lineErrs);
@@ -282,6 +278,31 @@ export default function RequestEquipment() {
 
     setSubmitting(true);
     try {
+      if (!currentUser) throw new Error('Please sign in again before submitting your request.');
+
+      // Refresh the Firebase claims and profile before writing. This avoids a
+      // stale email-verification token or cached LRN/grade causing a rule deny.
+      await reload(currentUser);
+      if (!currentUser.emailVerified) {
+        throw new Error('Verify your email address, then sign out and sign back in before requesting items.');
+      }
+      await getIdToken(currentUser, true);
+      const profileSnap = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!profileSnap.exists()) {
+        throw new Error('Your student profile is missing. Ask a laboratory administrator to check your account.');
+      }
+      const currentProfile = profileSnap.data();
+      if (currentProfile.role !== 'student') {
+        throw new Error('Only student accounts can submit item requests.');
+      }
+      if (!isValidGradeLevel(currentProfile.gradeLevel)) {
+        throw new Error('Your profile must have Grade 11 or Grade 12 set. Ask a laboratory administrator to update it.');
+      }
+      const currentLrn = String(currentProfile.lrn || '');
+      if (!/^\d+$/.test(currentLrn)) {
+        throw new Error('Your profile is missing a valid LRN. Ask a laboratory administrator to add it under Settings.');
+      }
+
       const items = lines.map(l => {
         const eq = getEquipmentAvail(l.equipmentId);
         return {
@@ -299,11 +320,11 @@ export default function RequestEquipment() {
       });
 
       const requestData = {
-        userId: userProfile.uid,
-        borrowerName: userProfile.name,
-        studentId: userProfile.lrn || '',
-        gradeLevel: userProfile.gradeLevel,
-        section: userProfile.section,
+        userId: editingRequest?.userId || currentUser.uid,
+        borrowerName: editingRequest?.borrowerName || currentProfile.name || userProfile?.name || '',
+        studentId: editingRequest?.studentId || currentLrn,
+        gradeLevel: editingRequest?.gradeLevel || currentProfile.gradeLevel,
+        section: editingRequest?.section ?? currentProfile.section ?? '',
         teacher: form.teacher.trim(),
         experiment: form.experiment.trim(),
         experimentDate: form.experimentDate,
@@ -325,8 +346,19 @@ export default function RequestEquipment() {
 
       if (editingRequest) {
         await updateDoc(doc(db, 'requests', editingRequest.id), {
-          ...requestData,
+          teacher: requestData.teacher,
+          experiment: requestData.experiment,
+          experimentDate: requestData.experimentDate,
+          proposedBorrowTime: requestData.proposedBorrowTime,
+          duration: requestData.duration,
+          expectedReturnDate: requestData.expectedReturnDate,
+          expectedReturnTime: requestData.expectedReturnTime,
+          items: requestData.items,
+          lateRequestFlag: requestData.lateRequestFlag,
+          labBookingId: requestData.labBookingId,
+          labRoom: requestData.labRoom,
           studentEditedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
       } else {
         await addDoc(collection(db, 'requests'), {
@@ -338,7 +370,12 @@ export default function RequestEquipment() {
       toast.success(editingRequest ? 'Pending request updated.' : 'Request submitted successfully!');
       navigate('/my-requests');
     } catch (err) {
-      toast.error('Failed to submit: ' + err.message);
+      console.error('Item request submission failed:', err?.code || err);
+      if (err?.code === 'permission-denied' || err?.code === 'firestore/permission-denied') {
+        toast.error('LabTrack could not verify this student profile for the request. Sign out and back in; if it continues, ask an administrator to check the account’s LRN, grade level, and Firestore rules.');
+      } else {
+        toast.error('Failed to submit: ' + err.message);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -369,7 +406,7 @@ export default function RequestEquipment() {
       <div className="card">
         <div className="card-header">
           <ClipboardList size={18} strokeWidth={1.8} />
-          {editingRequest ? 'Edit Pending Request' : 'Request Equipment'}
+          {editingRequest ? 'Edit Pending Request' : 'Request Item'}
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           {linkedBooking && (
@@ -506,7 +543,7 @@ export default function RequestEquipment() {
           {/* Equipment lines */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="label mb-0">Equipment Requested</label>
+              <label className="label mb-0">Items Requested</label>
               <button type="button" onClick={addLine} className="btn-secondary btn-sm">
                 <Plus size={14} /> Add Item
               </button>

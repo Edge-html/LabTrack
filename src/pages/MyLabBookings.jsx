@@ -256,7 +256,7 @@ export default function MyLabBookings() {
                         )}
                         {['pending', 'approved'].includes(b.status) && (
                           <Link to={`/request?booking=${b.id}`} className="btn-secondary btn-sm">
-                            <Package size={13} /> Request equipment
+                            <Package size={13} /> Request Item
                           </Link>
                         )}
                       </div>

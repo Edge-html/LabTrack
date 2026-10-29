@@ -14,7 +14,7 @@ const LABTRACK_LOGO = '/images/labtrack_logo.png';
 const studentNav = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/inventory', label: 'Laboratory Inventory', icon: Package },
-  { to: '/request', label: 'Request Equipment', icon: ClipboardList },
+  { to: '/request', label: 'Request Item', icon: ClipboardList },
   { to: '/my-requests', label: 'My Requests', icon: FileText },
   { to: '/lab-booking', label: 'Book Laboratory', icon: DoorOpen },
   { to: '/lab-schedule', label: 'Room Schedule', icon: CalendarDays, badgeKey: 'labAction' },
