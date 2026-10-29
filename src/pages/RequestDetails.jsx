@@ -9,13 +9,14 @@ import { useToast } from '../context/ToastContext';
 import { db } from '../lib/firebase';
 import { doc, getDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import {
-  formatDate, formatTimestamp, formatTimeOfDay, timeAgo, getEquipmentDueState,
+  formatDate, formatTimestamp, formatTimeOfDay, getEquipmentDueState,
 } from '../lib/helpers';
 import { StatusBadge } from '../components/StatusBadge';
 import { PageLoader } from '../components/LoadingSpinner';
 import ReturnProofCard from '../components/ReturnProofCard';
 import ReturnProofModal from '../components/ReturnProofModal';
 import { WarningRow, useWarnings } from '../components/WarningsPanel';
+import EquipmentRequestTimeline from '../components/EquipmentRequestTimeline';
 
 export default function RequestDetails() {
   const { id } = useParams();
@@ -27,6 +28,7 @@ export default function RequestDetails() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
 
   // Hooks must run unconditionally — request may still be loading.
   const { warnings } = useWarnings(request?.userId);
@@ -35,6 +37,11 @@ export default function RequestDetails() {
   useEffect(() => {
     load();
   }, [id]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setClockNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -85,7 +92,7 @@ export default function RequestDetails() {
   const hasReturnProof = Boolean(
     request.returnProofMeta?.count || request.returnProof?.dataUrl || request.returnProof?.photos?.length
   );
-  const dueState = getEquipmentDueState(request.status, request.expectedReturnDate, request.expectedReturnTime);
+  const dueState = getEquipmentDueState(request.status, request.expectedReturnDate, request.expectedReturnTime, clockNow);
   const isOverdueFlag = dueState?.kind === 'overdue';
 
   return (
@@ -171,12 +178,7 @@ export default function RequestDetails() {
       {/* Timeline */}
       <div className="card">
         <div className="card-header"><Clock size={18} strokeWidth={1.8} /> Timeline</div>
-        <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <TimelineStep label="Request Sent" at={request.createdAt} />
-          <TimelineStep label="Approved" at={request.approvedAt} />
-          <TimelineStep label="Released" at={request.releasedAt || request.releaseDate} />
-          <TimelineStep label="Returned" at={request.returnedAt} />
-        </div>
+        <div className="p-4"><EquipmentRequestTimeline request={request} isAdmin={isAdmin} /></div>
       </div>
 
       {request.labBookingId && (
@@ -353,7 +355,6 @@ export default function RequestDetails() {
     </div>
   );
 }
-
 function InfoRow({ label, value, span2 }) {
   return (
     <div className={span2 ? 'col-span-2' : ''}>
@@ -363,14 +364,3 @@ function InfoRow({ label, value, span2 }) {
   );
 }
 
-function TimelineStep({ label, at }) {
-  return (
-    <div className={`p-3 rounded-xl border text-center ${at ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className={`text-xs font-semibold mt-1 ${at ? 'text-green-800' : 'text-gray-400'}`}>
-        {at ? formatTimestamp(at) : 'Pending'}
-      </p>
-      {at && <p className="text-[10px] text-gray-400 mt-0.5">{timeAgo(at)}</p>}
-    </div>
-  );
-}

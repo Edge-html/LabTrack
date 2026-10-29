@@ -12,6 +12,7 @@ Run this checklist on a Vercel Preview deployment before promoting a workflow or
 - [ ] Submit an overlapping room booking. Confirm the conflict explains the occupied slot and prevents submission.
 - [ ] Cancel a pending booking and a future approved booking. Confirm the room slot is released. Confirm an approved booking cannot be cancelled after it has started.
 - [ ] Check the booking details timeline for request, approval, **Occupied**, and **Done** timestamps.
+- [ ] Check the equipment request timeline for Submitted, Approved, Collected, Return photo submitted, and Done, including the next-step guidance.
 - [ ] Check due-soon and overdue reminders on My Requests and in the notification bell.
 - [ ] Capture and submit a return photo, then verify staff can approve it or flag it and the student can resubmit after a flag.
 
