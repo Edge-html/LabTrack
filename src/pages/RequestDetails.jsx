@@ -363,4 +363,3 @@ function InfoRow({ label, value, span2 }) {
     </div>
   );
 }
-
